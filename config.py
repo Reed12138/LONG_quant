@@ -17,9 +17,9 @@ class Config:
     QUOTE_CURRENCY = "USDT"  # 计价货币
     
     # ============ 时间周期配置 ============
-    INTERVAL = "15m"  # K线周期：5分钟
+    INTERVAL = "30m"  # K线周期：5分钟
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
-    INTERVAL_SECONDS = 0  # 程序运行时间间隔
+    INTERVAL_SECONDS = 15  # 程序运行时间间隔
     
     # ============ MACD 指标参数 ============
     MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）
@@ -32,8 +32,8 @@ class Config:
     # ============ 震荡参数 =============
     MACD_SIGNAL_DIFF_THRESHOLD = 0.8  # MACD信号差异阈值
     ADX_PERIOD = 14                   # ADX计算周期
-    ADX_TREND_THRESHOLD = 23      # 趋势强度阈值
-    ADX_OSCILLATION_THRESHOLD = 22.5  # 低于此值为震荡
+    ADX_TREND_THRESHOLD = 18      # 趋势强度阈值
+    ADX_OSCILLATION_THRESHOLD = 18  # 低于此值为震荡
     RSI_THRESHOLD = 44
     RSI_PERIOD = 14
 

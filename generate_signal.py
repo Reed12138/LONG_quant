@@ -407,7 +407,7 @@ class SignalGenerator:
             macd_signal_low_quantile = hist_macd_signal.quantile(0.1)  # 10%低位
 
             is_low_point = (
-                (latest.get('rsi', 0) < self.config.RSI_THRESHOLD and latest.get('rsi', 0) < rsi_mean - rsi_std) or
+                (latest.get('rsi', 0) < self.config.RSI_THRESHOLD or latest.get('rsi', 0) < rsi_mean - rsi_std) or
                 (cci < self.config.CCI_OVERSOLD and cci < cci_mean - 1.5 * cci_std) or
                 (latest['macd_signal'] < macd_signal_low_quantile and signal_slope > 0)  # 斜率转正
             )
@@ -494,16 +494,25 @@ class SignalGenerator:
         details['tech_signal'] = tech_signal
         details['tech_reason'] = tech_reason
 
-        # 3. 最终信号融合逻辑
-        if "SELL" in (db_signal, tech_signal):  # 任意一方是 SELL，就离场
+        # 3. 最终信号融合逻辑（新增最高优先级：tech_signal == "HOLD" 时强制 HOLD）
+
+        # 最高优先级：技术信号为 HOLD 时，强制观望（不允许开仓）
+        if tech_signal == "HOLD":
+            final_signal = "HOLD"
+            reason = f"技术信号观望，优先持有不动: 技术({tech_signal}/{tech_reason}), 数据库({db_signal}/{db_reason})"
+
+        # 次高优先级：任意一方发出 SELL，立即做空（卖出）
+        elif "SELL" in (db_signal, tech_signal):
             final_signal = "SELL"
             reason = f"离场信号触发: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
 
-        elif db_signal == "BUY" or tech_signal == "BUY":  # 至少一方是 BUY
+        # 再次优先级：至少一方 BUY（此时 tech_signal 不可能是 HOLD 或 SELL）
+        elif db_signal == "BUY" or tech_signal == "BUY":
             final_signal = "BUY"
             reason = f"确认做多！数据库信号：{db_signal}，技术信号：{tech_signal}（{tech_reason}）"
             self.logger.info(f"🚀 {symbol} 触发做多信号")
 
+        # 其他情况：都 HOLD（例如双方都是其他状态，或 db HOLD + tech 非 HOLD/SELL/BUY）
         else:
             final_signal = "HOLD"
             reason = f"持有观望: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"

@@ -497,6 +497,185 @@ class DataFetcher:
         
         return df
 
+    def calculate_adx_dmi_safe(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
+        """
+        安全版本的ADX/DMI计算，完全避免NaN和警告
+        """
+        if period is None:
+            period = self.config.ADX_PERIOD
+        
+        if len(df) < period:
+            df['plus_di'] = 0.0
+            df['minus_di'] = 0.0
+            df['adx'] = 0.0
+            return df
+        
+        # 使用原始计算方法
+        high = df['high'].values
+        low = df['low'].values
+        close = df['close'].values
+        
+        # True Range
+        tr1 = high - low
+        tr2 = np.abs(high - np.roll(close, 1))
+        tr3 = np.abs(low - np.roll(close, 1))
+        tr = np.maximum.reduce([tr1, tr2, tr3])
+        tr[0] = tr1[0]
+        
+        # Directional Movement
+        up_move = high[1:] - high[:-1]
+        down_move = low[:-1] - low[1:]
+        
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        
+        plus_dm = np.concatenate([[0.0], plus_dm])
+        minus_dm = np.concatenate([[0.0], minus_dm])
+        
+        # Wilder平滑（修改版，避免NaN）
+        def wilder_smooth_safe(series: np.ndarray, period: int) -> np.ndarray:
+            n = len(series)
+            smoothed = np.zeros(n, dtype=float)
+            
+            if n == 0:
+                return smoothed
+            
+            # 使用简单平均初始化
+            for i in range(min(period, n)):
+                smoothed[i] = np.mean(series[:i+1]) if i > 0 else series[0]
+            
+            # Wilder递推
+            for i in range(period, n):
+                smoothed[i] = (smoothed[i-1] * (period - 1) + series[i]) / period
+            
+            return smoothed
+        
+        # 计算平滑值
+        atr = wilder_smooth_safe(tr, period)
+        plus_dm_s = wilder_smooth_safe(plus_dm, period)
+        minus_dm_s = wilder_smooth_safe(minus_dm, period)
+        
+        # 计算DI（安全除法）
+        epsilon = 1e-10
+        atr_safe = np.maximum(atr, epsilon)
+        
+        plus_di = 100 * plus_dm_s / atr_safe
+        minus_di = 100 * minus_dm_s / atr_safe
+        
+        plus_di = np.clip(plus_di, 0, 100)
+        minus_di = np.clip(minus_di, 0, 100)
+        
+        # 计算DX
+        di_sum = plus_di + minus_di
+        di_diff = np.abs(plus_di - minus_di)
+        
+        # 使用安全的逐元素计算
+        dx = np.zeros_like(di_sum)
+        for i in range(len(dx)):
+            if di_sum[i] > epsilon:
+                dx[i] = 100 * di_diff[i] / di_sum[i]
+            else:
+                dx[i] = 0.0
+        
+        # 计算ADX
+        adx = wilder_smooth_safe(dx, period)
+        adx = np.clip(adx, 0, 100)
+        
+        # 赋值回DataFrame
+        df['plus_di'] = plus_di
+        df['minus_di'] = minus_di
+        df['adx'] = adx
+        
+        return df
+
+    def calculate_adx_dmi_gpt(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
+        """
+        计算 +DI, -DI 和 ADX 指标（纯 pandas / numpy 实现）
+        对齐 Gate / TradingView / TA-Lib 的 Wilder 定义
+        """
+        if period is None:
+            period = self.config.ADX_PERIOD
+
+        if len(df) < period + 10:
+            self.logger.warning(
+                f"数据不足计算 ADX/DMI，需要至少 {period + 10} 条，当前 {len(df)} 条"
+            )
+            df['plus_di'] = 0.0
+            df['minus_di'] = 0.0
+            df['adx'] = 0.0
+            return df
+
+        try:
+            high = df['high'].values
+            low = df['low'].values
+            close = df['close'].values
+
+            # ========= True Range =========
+            tr1 = high - low
+            tr2 = np.abs(high - np.roll(close, 1))
+            tr3 = np.abs(low - np.roll(close, 1))
+            tr = np.maximum.reduce([tr1, tr2, tr3])
+            tr[0] = 0.0  # 第一根 TR 明确设为 0（Gate / TV 行为）
+
+            # ========= Directional Movement =========
+            up_move = high[1:] - high[:-1]
+            down_move = low[:-1] - low[1:]
+
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+            # 对齐长度
+            plus_dm = np.concatenate([[0.0], plus_dm])
+            minus_dm = np.concatenate([[0.0], minus_dm])
+
+            # ========= Wilder 平滑 =========
+            def wilder_smooth(series: np.ndarray, period: int) -> np.ndarray:
+                smoothed = np.full_like(series, np.nan, dtype=float)
+                if len(series) < period:
+                    return smoothed
+
+                # 第一个有效值：前 period 项的和（index = period-1）
+                smoothed[period - 1] = np.sum(series[:period])
+
+                # Wilder 递推
+                for i in range(period, len(series)):
+                    smoothed[i] = (
+                        smoothed[i - 1] * (period - 1) + series[i]
+                    ) / period
+
+                return smoothed
+
+            atr = wilder_smooth(tr, period)
+            plus_dm_s = wilder_smooth(plus_dm, period)
+            minus_dm_s = wilder_smooth(minus_dm, period)
+
+            # ========= +DI / -DI =========
+            plus_di = 100 * plus_dm_s / atr
+            minus_di = 100 * minus_dm_s / atr
+
+            # ========= DX（⚠️ 必须基于 DI，而不是 DM） =========
+            di_sum = plus_di + minus_di
+            di_diff = np.abs(plus_di - minus_di)
+            dx = np.where(di_sum == 0, 0.0, 100 * di_diff / di_sum)
+
+            # ========= ADX =========
+            adx = wilder_smooth(dx, period)
+
+            df['plus_di'] = plus_di
+            df['minus_di'] = minus_di
+            df['adx'] = adx
+
+        except Exception as e:
+            self.logger.error(f"计算 ADX/DMI 指标失败: {e}")
+            df['plus_di'] = 0.0
+            df['minus_di'] = 0.0
+            df['adx'] = 0.0
+
+        return df
+
+
+
+
     def calculate_volume_ma(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
         """
         计算成交量移动平均

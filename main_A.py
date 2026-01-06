@@ -38,6 +38,7 @@ class CryptoTradingBot:
         self.market_data = {}
         self.trade_history = []
         self.max_unrealised_pnl = 0
+        self._live_price_buffers = {} # 实时K线价格缓冲区
         
         # 实盘API配置
         self.api_key = os.getenv('GATE_API_KEY')
@@ -293,27 +294,83 @@ class CryptoTradingBot:
             self.close_position(symbol, current_size)
             return
 
-        # 做多
+        # 做多信号
         if signal == 'BUY':
-            if current_size < 0: # 平空仓
-                self.logger.info(f"🔻 实盘平空: {symbol} {current_size}张")
-                self.close_position(symbol, -current_size)
-            elif current_size == 0:
-                self.set_single_position_mode() # 设置单仓模式
-                self.set_isolated_margin_mode(symbol) # 设置逐仓模式
-                self.set_leverage(symbol) # 设置杠杆
-                size = int(self.config.SIZE)  # 固定张数开仓
-                self.logger.info(f"🚀 实盘开多: {symbol} {size}张")
+            if current_size < 0:  # 当前持空仓 → 先平空，再立即开多（反向开仓）
+                abs_size = -current_size
+                self.logger.info(f"🔻 实盘平空（反向）: {symbol} {abs_size}张")
+                self.close_position(symbol, abs_size)
+                
+                # 平仓后立即开多
+                self.set_single_position_mode()
+                self.set_isolated_margin_mode(symbol)
+                self.set_leverage(symbol)
+                size = int(self.config.SIZE)
+                self.logger.info(f"🚀 实盘开多（反向）: {symbol} {size}张")
                 result = self.open_position(symbol, size)
-                if result is not None:                           # 开多
-                    # self.logger.info(f"开仓成功: {symbol} {size}张")
-                    pos_data = self.get_position(symbol)          # 获取最新持仓信息
+
+                if result is not None:
+                    pos_data = self.get_position(symbol)
                     entry_price = float(pos_data.get('entry_price', price))
                     stop_loss_price = entry_price * (1 - self.config.STOP_LOSS_PCT / 100)
-                    close_type = "close_long"
-                    self.set_stop_loss(symbol, stop_loss_price,close_type)   # 设置止损
-                    self.logger.info(f"✅ 入场价格为: {entry_price}，止损价格已设置为 {stop_loss_price}，订单ID: {result.get('id')}")
+                    self.set_stop_loss(symbol, stop_loss_price, "close_long")
+                    self.logger.info(f"✅ 反向开多成功，入场价: {entry_price}，止损: {stop_loss_price}")
 
+            elif current_size == 0:  # 无仓 → 直接开多
+                self.set_single_position_mode()
+                self.set_isolated_margin_mode(symbol)
+                self.set_leverage(symbol)
+                size = int(self.config.SIZE)
+                self.logger.info(f"🚀 实盘开多: {symbol} {size}张")
+                result = self.open_position(symbol, size)
+
+                if result is not None:
+                    pos_data = self.get_position(symbol)
+                    entry_price = float(pos_data.get('entry_price', price))
+                    stop_loss_price = entry_price * (1 - self.config.STOP_LOSS_PCT / 100)
+                    self.set_stop_loss(symbol, stop_loss_price, "close_long")
+                    self.logger.info(f"✅ 入场价格: {entry_price}，止损已设置: {stop_loss_price}")
+
+            # else: current_size > 0，已有多仓 → 可忽略或加仓（这里默认不动）
+
+        # 做空信号
+        elif signal == 'SELL':
+            if current_size > 0:  # 当前持多仓 → 先平多，再立即开空（反向开仓）
+                self.logger.info(f"🔻 实盘平多（反向）: {symbol} {current_size}张")
+                self.close_position(symbol, current_size)
+                
+                # 平仓后立即开空
+                self.set_single_position_mode()
+                self.set_isolated_margin_mode(symbol)
+                self.set_leverage(symbol)
+                size = -int(self.config.SIZE)
+                self.logger.info(f"🚀 实盘开空（反向）: {symbol} {size}张")
+                result = self.open_position(symbol, size)
+
+                if result is not None:
+                    pos_data = self.get_position(symbol)
+                    entry_price = float(pos_data.get('entry_price', price))
+                    stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PCT / 100)
+                    self.set_stop_loss(symbol, stop_loss_price, "close_short")
+                    self.logger.info(f"✅ 反向开空成功，入场价: {entry_price}，止损: {stop_loss_price}")
+
+            elif current_size == 0:  # 无仓 → 直接开空
+                self.set_single_position_mode()
+                self.set_isolated_margin_mode(symbol)
+                self.set_leverage(symbol)
+                size = -int(self.config.SIZE)
+                self.logger.info(f"🚀 实盘开空: {symbol} {size}张")
+                result = self.open_position(symbol, size)
+
+                if result is not None:
+                    pos_data = self.get_position(symbol)
+                    entry_price = float(pos_data.get('entry_price', price))
+                    stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PCT / 100)
+                    self.set_stop_loss(symbol, stop_loss_price, "close_short")
+                    self.logger.info(f"✅ 入场价格: {entry_price}，止损已设置: {stop_loss_price}")
+
+            # else: current_size < 0，已有空仓 → 可忽略或加仓（这里默认不动）
+        
         # 不动
         elif signal == 'HOLD' and current_size > 0:
             self.logger.debug(f"持有信号（HOLD），当前持仓: {current_size}张")
@@ -328,25 +385,6 @@ class CryptoTradingBot:
                 self.close_position(symbol, current_size)
                 self.logger.info(f"💰 手续费获利平仓: {symbol} 浮盈 {unrealised_pnl_pct:.2f}% 超过手续费 {self.config.HANDING_FEE_PCT}%")
 
-        # 做空
-        elif signal == 'SELL':
-            if current_size > 0: # 平多
-                self.logger.info(f"🔻 实盘平多: {symbol} {current_size}张")
-                self.close_position(symbol, -current_size)
-            elif current_size == 0:
-                self.set_single_position_mode() # 设置单仓模式
-                self.set_isolated_margin_mode(symbol) # 设置逐仓模式
-                self.set_leverage(symbol) # 设置杠杆
-                size = -int(self.config.SIZE)  # 固定张数开仓，空仓开负数
-                self.logger.info(f"🚀 实盘开空: {symbol} {size}张")
-                result = self.open_position(symbol, size)
-                if result is not None:                           # 开空
-                    pos_data = self.get_position(symbol)          # 获取最新持仓信息
-                    entry_price = float(pos_data.get('entry_price', price))
-                    stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PCT / 100)
-                    close_type = "close_short"
-                    self.set_stop_loss(symbol, stop_loss_price,close_type)   # 设置止损
-                    self.logger.info(f"✅ 入场价格为: {entry_price}，止损价格已设置为 {stop_loss_price}，订单ID: {result.get('id')}")
 
     def set_single_position_mode(self, settle='usdt'):
         """
@@ -762,40 +800,76 @@ class CryptoTradingBot:
                 self.logger.error(f"更新{symbol}数据失败: {e}")
     
     def _append_or_update_live_bar(self, df: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
-        """更新实时K线数据，添加当前未完成的K线"""
+        """
+        更新实时K线：准确记录当前未完成K线的 high/low（纯轮询实现，不依赖WebSocket）
+        通过维护价格缓冲区，记录本周期内所有出现过的价格点
+        """
+        if df.empty:
+            self.logger.warning(f"{symbol} {timeframe} 数据为空，无法更新实时K线")
+            return df.copy()
+
         df = df.copy()
 
-        # 获取实时标记价格
+        # 获取最新标记价格（你的现有逻辑）
         contract_info = self.get_contract_info(symbol)
         if contract_info and 'mark_price' in contract_info:
             current_price = float(contract_info['mark_price'])
         else:
             current_price = df['close'].iloc[-1]
 
+        # 计算时间
         minutes = int(timeframe.rstrip('m'))
         now = pd.Timestamp.now(tz=df.index.tz)
-        # 修改后（推荐，兼容未来版本）
         current_bar_start = now.floor(f'{minutes}min')
-        last_bar_start = df.index[-1].floor(f'{minutes}min')
+        last_bar_start = df.index[-1].floor(f'{minutes}min') if not df.empty else None
 
+        # 构建缓冲区键（唯一标识 symbol + timeframe）
+        buffer_key = f"{symbol}_{timeframe}"
+
+        # 初始化或获取缓冲区
+        if buffer_key not in self._live_price_buffers:
+            self._live_price_buffers[buffer_key] = {
+                'start': current_bar_start,
+                'prices': {current_price}
+            }
+
+        buffer = self._live_price_buffers[buffer_key]
+
+        # 情况1：进入新的K线（新周期开始）
         if current_bar_start > last_bar_start:
-            # 新开一根K线
+            # 添加新K线（初始值基于当前价格）
             new_row = pd.Series({
                 'open':  current_price,
                 'high':  current_price,
                 'low':   current_price,
                 'close': current_price,
-                'volume': 0,
+                'volume': 0.0,
             }, name=current_bar_start)
             df = pd.concat([df, new_row.to_frame().T])
 
-        # 更新当前K线的 close/high/low
-        last_idx = df.index[-1]
-        df.loc[last_idx, 'close'] = current_price
-        df.loc[last_idx, 'high'] = max(df.loc[last_idx, 'high'], current_price)
-        df.loc[last_idx, 'low']  = min(df.loc[last_idx, 'low'],  current_price)
+            # 重置缓冲区：开始记录新K线的价格
+            buffer['start'] = current_bar_start
+            buffer['prices'] = {current_price}
 
-        # volume 可以考虑从 ticker 获取实时成交量，这里先简单设0或继承
+        else:
+            # 情况2：仍在当前K线内 → 累积价格
+            buffer['prices'].add(current_price)
+
+        # 更新当前K线的字段
+        last_idx = df.index[-1]
+
+        df.loc[last_idx, 'close'] = current_price
+
+        # 【关键改进】：用缓冲区中所有价格更新 high 和 low
+        if buffer['prices']:
+            df.loc[last_idx, 'high'] = max(buffer['prices'])
+            df.loc[last_idx, 'low']  = min(buffer['prices'])
+        else:
+            # 理论上不会发生
+            df.loc[last_idx, 'high'] = current_price
+            df.loc[last_idx, 'low']  = current_price
+
+        # 可选：volume 仍为 0，或你可以从其他接口获取累计量，这里保持简单
 
         return df
 

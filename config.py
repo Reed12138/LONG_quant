@@ -19,7 +19,7 @@ class Config:
     # ============ 时间周期配置 ============
     INTERVAL = "30m"  # K线周期：5分钟
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
-    INTERVAL_SECONDS = 15  # 程序运行时间间隔
+    INTERVAL_SECONDS = 30  # 程序运行时间间隔
     
     # ============ MACD 指标参数 ============
     MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）
@@ -54,7 +54,7 @@ class Config:
     
     # ============ 风险管理参数 ============
     # 止损止盈参数
-    STOP_LOSS_PCT = 0.6     # 止损百分比
+    STOP_LOSS_PCT = 0.8     # 止损百分比
     TAKE_PROFIT_PCT = 100.0   # 止盈百分比
     TRAILING_STOP_PCT = 10  # 移动止损百分比
     HANDING_FEE_PCT = 2.5    # 手续费百分比

@@ -320,7 +320,7 @@ class SignalGenerator:
         for col in ['macd', 'macd_signal', 'macd_slope', 'signal_slope', 'cci', 'rsi']:
             details[col] = latest.get(col, np.nan)
 
-        # 假设df已有adx, plus_di, minus_di（从calculate_adx_dmi计算）
+        # df已有adx, plus_di, minus_di（从calculate_adx_dmi计算）
         adx = latest.get('adx', 0)
         plus_di = latest.get('plus_di', 0)
         minus_di = latest.get('minus_di', 0)
@@ -372,8 +372,9 @@ class SignalGenerator:
             if macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and macd_slope > signal_slope:
                 return "BUY", f"{trend_reason}: MACD加速上涨 {macd_slope:.4f} > {signal_slope:.4f}", details
 
-            if cci < self.config.CCI_OVERSOLD:
-                return "BUY", f"{trend_reason}: CCI超卖 {cci:.2f}", details
+            # 上涨趋势cci一般不会超卖
+            # if cci < self.config.CCI_OVERSOLD:
+            #     return "BUY", f"{trend_reason}: CCI超卖 {cci:.2f}", details
 
             # 卖出信号：严格，只在MACD死叉（阈值调高）、零轴上方斜率转负、CCI超买、双线向下（需确认）
             adjusted_cross_threshold = self.config.MACD_CROSS_THRESHOLD * 2.4  # 调高阈值
@@ -494,28 +495,23 @@ class SignalGenerator:
         details['tech_signal'] = tech_signal
         details['tech_reason'] = tech_reason
 
-        # 3. 最终信号融合逻辑（新增最高优先级：tech_signal == "HOLD" 时强制 HOLD）
+        # 3. 最终信号融合逻辑（新规则）
 
-        # 最高优先级：技术信号为 HOLD 时，强制观望（不允许开仓）
-        if tech_signal == "HOLD":
-            final_signal = "HOLD"
-            reason = f"技术信号观望，优先持有不动: 技术({tech_signal}/{tech_reason}), 数据库({db_signal}/{db_reason})"
-
-        # 次高优先级：任意一方发出 SELL，立即做空（卖出）
-        elif "SELL" in (db_signal, tech_signal):
+        # 优先级1：任意一方发出 SELL，立即离场（做空/平仓）
+        if db_signal == "SELL" or tech_signal == "SELL":
             final_signal = "SELL"
             reason = f"离场信号触发: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
 
-        # 再次优先级：至少一方 BUY（此时 tech_signal 不可能是 HOLD 或 SELL）
+        # 优先级2：任意一方发出 BUY，且无 SELL 信号时，做多
         elif db_signal == "BUY" or tech_signal == "BUY":
             final_signal = "BUY"
             reason = f"确认做多！数据库信号：{db_signal}，技术信号：{tech_signal}（{tech_reason}）"
             self.logger.info(f"🚀 {symbol} 触发做多信号")
 
-        # 其他情况：都 HOLD（例如双方都是其他状态，或 db HOLD + tech 非 HOLD/SELL/BUY）
-        else:
+        # 优先级3：只有双方都为 HOLD 时，才真正观望
+        else:  # 即 db_signal == "HOLD" and tech_signal == "HOLD"（或其他非BUY/SELL状态，但通常是HOLD）
             final_signal = "HOLD"
-            reason = f"持有观望: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+            reason = f"双方均无明确信号，持有观望: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
 
         details['final_signal'] = final_signal
         details['final_reason'] = reason

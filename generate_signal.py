@@ -495,24 +495,62 @@ class SignalGenerator:
         details['tech_signal'] = tech_signal
         details['tech_reason'] = tech_reason
 
-        # 3. 最终信号融合逻辑（新规则）
+        # 3. 最终信号融合逻辑
+        # 核心规则：
+        # 1. 技术信号（tech_signal）在冲突时拥有最高决策权（一买一卖时听技术的）
+        # 2. HOLD 没有否决能力：只要任意一方发出 BUY 或 SELL，就执行该方向
+        # 3. 只有当 db_signal 和 tech_signal 都为 HOLD 时，才真正 HOLD（观望）
 
-        # 优先级1：任意一方发出 SELL，立即离场（做空/平仓）
-        if db_signal == "SELL" or tech_signal == "SELL":
-            final_signal = "SELL"
-            reason = f"离场信号触发: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+        # 优先级1：数据库信号为 SELL 的情况
+        if db_signal == "SELL":
+            if tech_signal == "BUY":
+                # 严重冲突：db 要求卖出，但 tech 要求买入
+                # → 以技术信号为准，执行做多（技术认为当前应买入）
+                final_signal = "BUY"
+                reason = f"技术信号与数据库信号严重冲突，以技术信号为准！数据库：SELL，技术：BUY（{tech_reason}）"
+                self.logger.info(f"🚀 {symbol} 触发做多信号（技术覆盖数据库卖出）")
+            
+            else:
+                # db 为 SELL，且 tech 不是 BUY（即 HOLD 或 SELL 或其他）
+                # → 执行 SELL（有明确卖出信号，且无技术看多反对）
+                final_signal = "SELL"
+                reason = f"离场信号触发（数据库发出SELL）: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
 
-        # 优先级2：任意一方发出 BUY，且无 SELL 信号时，做多
-        elif db_signal == "BUY" or tech_signal == "BUY":
-            final_signal = "BUY"
-            reason = f"确认做多！数据库信号：{db_signal}，技术信号：{tech_signal}（{tech_reason}）"
-            self.logger.info(f"🚀 {symbol} 触发做多信号")
+        # 优先级2：数据库信号为 BUY 的情况
+        elif db_signal == "BUY":
+            if tech_signal == "SELL":
+                # 严重冲突：db 要求买入，但 tech 要求卖出
+                # → 以技术信号为准，执行离场（技术认为当前应卖出）
+                final_signal = "SELL"
+                reason = f"技术信号与数据库信号严重冲突，以技术信号为准！数据库：BUY，技术：SELL（{tech_reason}）"
+            
+            else:
+                # db 为 BUY，且 tech 不是 SELL（即 BUY 或 HOLD 或其他）
+                # → 执行 BUY（有明确买入信号，且无技术看空反对）
+                final_signal = "BUY"
+                reason = f"确认做多！数据库发出BUY信号，技术无反对: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+                self.logger.info(f"🚀 {symbol} 触发做多信号")
 
-        # 优先级3：只有双方都为 HOLD 时，才真正观望
-        else:  # 即 db_signal == "HOLD" and tech_signal == "HOLD"（或其他非BUY/SELL状态，但通常是HOLD）
-            final_signal = "HOLD"
-            reason = f"双方均无明确信号，持有观望: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+        # 优先级3：数据库信号既不是 BUY 也不是 SELL（通常为 HOLD）
+        else:
+            # db_signal == "HOLD" 或其他无方向信号
+            if tech_signal == "BUY":
+                # 新增规则：一方 HOLD，一方 BUY → 执行 BUY
+                final_signal = "BUY"
+                reason = f"技术信号发出BUY，数据库无方向，执行做多: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+                self.logger.info(f"🚀 {symbol} 触发做多信号（技术主导）")
 
+            elif tech_signal == "SELL":
+                # 新增规则：一方 HOLD，一方 SELL → 执行 SELL
+                final_signal = "SELL"
+                reason = f"技术信号发出SELL，数据库无方向，执行离场: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+
+            else:
+                # 双方都无明确方向（通常都是 HOLD）
+                final_signal = "HOLD"
+                reason = f"双方均无明确信号，持有观望: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
+
+        # 保存最终结果
         details['final_signal'] = final_signal
         details['final_reason'] = reason
 

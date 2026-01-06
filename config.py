@@ -47,7 +47,7 @@ class Config:
     SIDEWAYS_SLOPE_THRESHOLD = 0.12        # 震荡斜率阈值
 
     # CCI超买超卖阈值
-    CCI_OVERBOUGHT = 300    # 超买阈值
+    CCI_OVERBOUGHT = 280    # 超买阈值
     CCI_OVERSOLD = -240     # 超卖阈值
     
     # 信号确认条件
@@ -82,7 +82,7 @@ class Config:
     # SIMULATION_MODE = False  # 是否为模拟交易模式
     # INITIAL_CAPITAL = 10000.0  # 初始资金（USDT）
     SETTLE = "usdt" # 合约的结算币种
-    LEVERAGE = 5  # 杠杆倍数
+    LEVERAGE = 1  # 杠杆倍数
     SIZE = 1 # 每次开仓的合约张数
     
     # ============ 日志和监控 ============

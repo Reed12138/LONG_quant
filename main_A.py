@@ -291,8 +291,8 @@ class CryptoTradingBot:
         # print(f"\n current_size:{current_size}\n")
         # 风险清仓（优先级最高）
         if signal == 'CLEAR' and current_size != 0:
-            self.logger.warning(f"🚨 触发风险清仓: {analysis_result['risk_reason']}")
-            self.close_position(symbol, current_size)
+            self.logger.warning(f"🚨 触发清仓: 风险原因：{analysis_result['risk_reason']}；技术原因：{analysis_result['reason']}")
+            self.close_position(symbol, -current_size)
             return
 
         # 做多信号

@@ -359,6 +359,7 @@ class SignalGenerator:
         signal_value = latest.get('macd_signal', 0)
         cci = latest.get('cci', 0)
 
+        # 上升趋势
         if trend == "UP":
             # 上涨趋势：稳健持有，卖出信号需更严格（调高阈值，忽略短期波动）
             # 买入信号：MACD金叉、斜率转正、MACD加速上涨、CCI超卖
@@ -376,26 +377,27 @@ class SignalGenerator:
             # if cci < self.config.CCI_OVERSOLD:
             #     return "BUY", f"{trend_reason}: CCI超卖 {cci:.2f}", details
 
-            # 卖出信号：严格，只在MACD死叉（阈值调高）、零轴上方斜率转负、CCI超买、双线向下（需确认）
+            # 清仓信号：严格，只在MACD死叉（阈值调高）、零轴上方斜率转负、CCI超买、双线向下（需确认）
             adjusted_cross_threshold = self.config.MACD_CROSS_THRESHOLD * 2.4  # 调高阈值
             adjusted_cci_overbought = self.config.CCI_OVERBOUGHT + 50
             adjusted_sideways_threshold = self.config.MACD_POSITIVE_SLOPE_THRESHOLD * 2.4 # 调整上方斜率转负阈值
 
             if prev_macd_diff >= 0 and macd_diff < 0 and abs(macd_diff) > adjusted_cross_threshold:
                 if self._confirm_signal(symbol, "SELL", df):
-                    return "SELL", f"{trend_reason}: MACD死叉确认（严格） {macd_diff:.4f}", details
+                    return "SELL", f"{trend_reason}: MACD死叉确认（严格），上升趋势清仓 {macd_diff:.4f}", details
 
             if latest['macd'] > 0 and prev_macd_slope > 0 and macd_slope < -adjusted_sideways_threshold:
-                return "SELL", f"{trend_reason}: MACD零轴上方斜率转负（严格） {macd_slope:.4f}", details
+                return "CLEAR", f"{trend_reason}: MACD零轴上方斜率转负（严格），上升趋势清仓 {macd_slope:.4f}", details
 
             if cci > adjusted_cci_overbought:
-                return "SELL", f"{trend_reason}: CCI超买（严格） {cci:.2f}", details
+                return "CLEAR", f"{trend_reason}: CCI超买（严格），上升趋势清仓 {cci:.2f}", details
 
             if macd_slope < -adjusted_sideways_threshold and signal_slope < -adjusted_sideways_threshold + 0.15:
                 return "SELL", f"{trend_reason}: 双线向下加速（严格） macd_slope={macd_slope:.4f}, signal_slope={signal_slope:.4f}", details
 
             return "HOLD", f"{trend_reason}: 上涨趋势稳健持有，无明确买入或卖出信号", details
 
+        # 下跌趋势
         elif trend == "DOWN":
             # 下跌趋势：谨慎买入，只在低点（结合RSI、CCI、MACD信号历史判断）
             # 先检查低点条件
@@ -416,21 +418,21 @@ class SignalGenerator:
             if not is_low_point:
                 return "HOLD", f"{trend_reason}: 下跌趋势无可靠低点，不做多", details
 
-            # 买入信号：只在低点时触发MACD金叉、斜率转正、MACD加速上涨、CCI超卖
+            # 清仓信号：只在低点时触发MACD金叉、斜率转正、MACD加速上涨、CCI超卖
             if prev_macd_diff <= 0 and macd_diff > 0 and abs(macd_diff) > self.config.MACD_CROSS_THRESHOLD:
                 if self._confirm_signal(symbol, "BUY", df):
-                    return "BUY", f"{trend_reason}: 低点MACD金叉确认 {macd_diff:.4f}", details
+                    return "BUY", f"{trend_reason}: 低点MACD金叉确认{macd_diff:.4f}", details
 
             if prev_macd_slope < 0 and macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and abs(macd_value - signal_value) > self.config.MACD_SIGNAL_DIFF_THRESHOLD:
-                return "BUY", f"{trend_reason}: 低点MACD斜率强势转正 {macd_slope:.4f}", details
+                return "CLEAR", f"{trend_reason}: 低点MACD斜率强势转正，下跌趋势清仓 {macd_slope:.4f}", details
 
             if macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and macd_slope > signal_slope:
                 return "BUY", f"{trend_reason}: 低点MACD加速上涨 {macd_slope:.4f} > {signal_slope:.4f}", details
 
             if cci < self.config.CCI_OVERSOLD:
-                return "BUY", f"{trend_reason}: 低点CCI超卖 {cci:.2f}", details
+                return "CLEAR", f"{trend_reason}: 低点CCI超卖，下跌趋势清仓 {cci:.2f}", details
 
-            # 卖出信号：正常触发MACD死叉、零轴上方斜率转负、CCI超买、双线向下
+            # 做空信号：正常触发MACD死叉、零轴上方斜率转负、CCI超买、双线向下
             if prev_macd_diff >= 0 and macd_diff < 0 and abs(macd_diff) > self.config.MACD_CROSS_THRESHOLD:
                 if self._confirm_signal(symbol, "SELL", df):
                     return "SELL", f"{trend_reason}: MACD死叉确认 {macd_diff:.4f}", details
@@ -501,6 +503,12 @@ class SignalGenerator:
         # 2. HOLD 没有否决能力：只要任意一方发出 BUY 或 SELL，就执行该方向
         # 3. 只有当 db_signal 和 tech_signal 都为 HOLD 时，才真正 HOLD（观望）
 
+        # 优先级0：数据库信号为 CLEAR 的情况
+        if tech_signal == "CLEAR":
+            final_signal = "CLEAR"
+            reason = f"技术信号指示清仓{tech_reason}）"
+            self.logger.info(f"🟡 {symbol} 触发清仓信号，清仓卖出")
+            
         # 优先级1：数据库信号为 SELL 的情况
         if db_signal == "SELL":
             if tech_signal == "BUY":

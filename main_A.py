@@ -14,6 +14,7 @@ import requests
 import hashlib
 import hmac
 import os
+import pytz
 
 from collections import deque
 from config import Config
@@ -302,9 +303,9 @@ class CryptoTradingBot:
                 self.close_position(symbol, abs_size)
                 
                 # 平仓后立即开多
-                self.set_single_position_mode()
-                self.set_isolated_margin_mode(symbol)
-                self.set_leverage(symbol)
+                # self.set_single_position_mode()
+                # self.set_isolated_margin_mode(symbol)
+                # self.set_leverage(symbol)
                 size = int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开多（反向）: {symbol} {size}张")
                 result = self.open_position(symbol, size)
@@ -317,9 +318,9 @@ class CryptoTradingBot:
                     self.logger.info(f"✅ 反向开多成功，入场价: {entry_price}，止损: {stop_loss_price}")
 
             elif current_size == 0:  # 无仓 → 直接开多
-                self.set_single_position_mode()
-                self.set_isolated_margin_mode(symbol)
-                self.set_leverage(symbol)
+                # self.set_single_position_mode()
+                # self.set_isolated_margin_mode(symbol)
+                # self.set_leverage(symbol)
                 size = int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开多: {symbol} {size}张")
                 result = self.open_position(symbol, size)
@@ -340,9 +341,9 @@ class CryptoTradingBot:
                 self.close_position(symbol, current_size)
                 
                 # 平仓后立即开空
-                self.set_single_position_mode()
-                self.set_isolated_margin_mode(symbol)
-                self.set_leverage(symbol)
+                # self.set_single_position_mode()
+                # self.set_isolated_margin_mode(symbol)
+                # self.set_leverage(symbol)
                 size = -int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开空（反向）: {symbol} {size}张")
                 result = self.open_position(symbol, size)
@@ -355,9 +356,9 @@ class CryptoTradingBot:
                     self.logger.info(f"✅ 反向开空成功，入场价: {entry_price}，止损: {stop_loss_price}")
 
             elif current_size == 0:  # 无仓 → 直接开空
-                self.set_single_position_mode()
-                self.set_isolated_margin_mode(symbol)
-                self.set_leverage(symbol)
+                # self.set_single_position_mode()
+                # self.set_isolated_margin_mode(symbol)
+                # self.set_leverage(symbol)
                 size = -int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开空: {symbol} {size}张")
                 result = self.open_position(symbol, size)
@@ -413,7 +414,6 @@ class CryptoTradingBot:
 
         # print(r.json())
         return r.json()
-
 
     def set_stop_loss(self, contract: str, stop_price: float, close_type: str):
         """
@@ -654,6 +654,27 @@ class CryptoTradingBot:
             return False
 
     # ================== 其他原有方法（保持不变） ==================
+    def is_trading_time_beijing(self) -> bool:
+        """
+        判断当前是否处于允许交易的北京时间段
+        交易时间：
+            亚洲：09:00 - 15:00
+            欧洲：15:00 - 23:00
+            美洲：20:00 - 04:00（跨天）
+        """
+        from datetime import datetime, time as dtime
+        import pytz
+        beijing_tz = pytz.timezone("Asia/Shanghai")
+        now = datetime.now(beijing_tz).time()
+
+        # 允许交易的时间段
+        if dtime(9, 0) <= now <= dtime(23, 59):
+            return True
+        if dtime(0, 0) <= now <= dtime(4, 0):
+            return True
+
+        return False
+
     def test_connection(self) -> bool:
         price = self.data_fetcher.fetch_current_price("ETH_USDT")
         if price:
@@ -1097,11 +1118,22 @@ class CryptoTradingBot:
             if not self.initialize_symbol(symbol):
                 self.logger.error(f"{symbol} 初始化失败")
 
+        # 设置账户模式
+        self.set_single_position_mode()
+        self.set_isolated_margin_mode(symbol)
+        self.set_leverage(symbol)
+
         try:
             cycle_count = 0
             while True:
                 cycle_count += 1
-                self.logger.info(f"\n第 {cycle_count} 个交易周期")
+
+                if not self.is_trading_time_beijing():
+                    self.logger.info("当前不在交易时间段（北京时间），跳过本周期")
+                    time.sleep(self.config.SLEEP_INTERVAL)
+                    continue
+
+                self.logger.info(f"\n第 {cycle_count} 个交易周期（允许交易）")
                 self.trading_cycle()
 
                 print(f"\n{self.config.INTERVAL_SECONDS}秒后进入下一个周期...\n")
@@ -1111,6 +1143,7 @@ class CryptoTradingBot:
             self.logger.info("\n手动停止实盘策略")
         except Exception as e:
             self.logger.error(f"主循环异常: {e}", exc_info=True)
+
 
 def main():
     config = Config()

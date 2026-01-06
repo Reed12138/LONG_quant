@@ -19,7 +19,8 @@ class Config:
     # ============ 时间周期配置 ============
     INTERVAL = "30m"  # K线周期：5分钟
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
-    INTERVAL_SECONDS = 30  # 程序运行时间间隔
+    INTERVAL_SECONDS = 60  # 程序运行时间间隔
+    SLEEP_INTERVAL = 300   # 程序休眠时间间隔
     
     # ============ MACD 指标参数 ============
     MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）

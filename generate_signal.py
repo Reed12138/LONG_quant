@@ -377,23 +377,23 @@ class SignalGenerator:
             # if cci < self.config.CCI_OVERSOLD:
             #     return "BUY", f"{trend_reason}: CCI超卖 {cci:.2f}", details
 
-            # 清仓信号：严格，只在MACD死叉（阈值调高）、零轴上方斜率转负、CCI超买、双线向下（需确认）
-            adjusted_cross_threshold = self.config.MACD_CROSS_THRESHOLD * 2.4  # 调高阈值
-            adjusted_cci_overbought = self.config.CCI_OVERBOUGHT + 50
-            adjusted_sideways_threshold = self.config.MACD_POSITIVE_SLOPE_THRESHOLD * 2.4 # 调整上方斜率转负阈值
+            # 清仓、做空信号：严格，只在MACD死叉（阈值调高）、零轴上方斜率转负、CCI超买、双线向下（需确认）
+            adjusted_cross_threshold = self.config.MACD_CROSS_THRESHOLD * 2  # 调高阈值
+            adjusted_cci_overbought = self.config.CCI_OVERBOUGHT
+            adjusted_sideways_threshold = self.config.MACD_POSITIVE_SLOPE_THRESHOLD * 1.5 # 调整上方斜率转负阈值 0.32*2
 
             if prev_macd_diff >= 0 and macd_diff < 0 and abs(macd_diff) > adjusted_cross_threshold:
                 if self._confirm_signal(symbol, "SELL", df):
-                    return "SELL", f"{trend_reason}: MACD死叉确认（严格），上升趋势清仓 {macd_diff:.4f}", details
+                    return "SELL", f"{trend_reason}: MACD死叉确认（严格），顶点做空 {macd_diff:.4f}", details
 
-            if latest['macd'] > 0 and prev_macd_slope > 0 and macd_slope < -adjusted_sideways_threshold:
-                return "CLEAR", f"{trend_reason}: MACD零轴上方斜率转负（严格），上升趋势清仓 {macd_slope:.4f}", details
+            if prev_macd_slope > 0 and macd_slope < -adjusted_sideways_threshold:
+                return "CLEAR", f"{trend_reason}: MACD零轴上方斜率转负（严格），上升趋势清仓，macd斜率{macd_slope:.4f}", details
 
             if cci > adjusted_cci_overbought:
-                return "CLEAR", f"{trend_reason}: CCI超买（严格），上升趋势清仓 {cci:.2f}", details
+                return "SELL", f"{trend_reason}: CCI超买（严格），上升趋势清仓 {cci:.2f}", details
 
             if macd_slope < -adjusted_sideways_threshold and signal_slope < -adjusted_sideways_threshold + 0.15:
-                return "SELL", f"{trend_reason}: 双线向下加速（严格） macd_slope={macd_slope:.4f}, signal_slope={signal_slope:.4f}", details
+                return "SELL", f"{trend_reason}: 双线向下加速（严格），做空； macd_slope={macd_slope:.4f}, signal_slope={signal_slope:.4f}", details
 
             return "HOLD", f"{trend_reason}: 上涨趋势稳健持有，无明确买入或卖出信号", details
 
@@ -410,9 +410,9 @@ class SignalGenerator:
             macd_signal_low_quantile = hist_macd_signal.quantile(0.1)  # 10%低位
 
             is_low_point = (
-                (latest.get('rsi', 0) < self.config.RSI_THRESHOLD or latest.get('rsi', 0) < rsi_mean - rsi_std) or
-                (cci < self.config.CCI_OVERSOLD and cci < cci_mean - 1.5 * cci_std) or
-                (latest['macd_signal'] < macd_signal_low_quantile and signal_slope > 0)  # 斜率转正
+                (latest.get('rsi', 0) < self.config.RSI_THRESHOLD or latest.get('rsi', 0) < rsi_mean - rsi_std) or # RSI超卖
+                (cci < self.config.CCI_OVERSOLD and cci < cci_mean - 1.5 * cci_std) or # CCI超卖
+                (latest['macd_signal'] < macd_signal_low_quantile)  # macd位于历史低位
             )
 
             if not is_low_point:
@@ -421,13 +421,13 @@ class SignalGenerator:
             # 清仓信号：只在低点时触发MACD金叉、斜率转正、MACD加速上涨、CCI超卖
             if prev_macd_diff <= 0 and macd_diff > 0 and abs(macd_diff) > self.config.MACD_CROSS_THRESHOLD:
                 if self._confirm_signal(symbol, "BUY", df):
-                    return "BUY", f"{trend_reason}: 低点MACD金叉确认{macd_diff:.4f}", details
+                    return "BUY", f"{trend_reason}: 低点MACD金叉确认，反向做多。{macd_diff:.4f}", details
 
-            if prev_macd_slope < 0 and macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and abs(macd_value - signal_value) > self.config.MACD_SIGNAL_DIFF_THRESHOLD:
+            if prev_macd_slope < 0 and macd_slope > self.config.SIDEWAYS_SLOPE_THRESHOLD:
                 return "CLEAR", f"{trend_reason}: 低点MACD斜率强势转正，下跌趋势清仓 {macd_slope:.4f}", details
 
             if macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and macd_slope > signal_slope:
-                return "BUY", f"{trend_reason}: 低点MACD加速上涨 {macd_slope:.4f} > {signal_slope:.4f}", details
+                return "BUY", f"{trend_reason}: 低点MACD加速上涨，做多。 {macd_slope:.4f} > {signal_slope:.4f}", details
 
             if cci < self.config.CCI_OVERSOLD:
                 return "CLEAR", f"{trend_reason}: 低点CCI超卖，下跌趋势清仓 {cci:.2f}", details
@@ -437,11 +437,8 @@ class SignalGenerator:
                 if self._confirm_signal(symbol, "SELL", df):
                     return "SELL", f"{trend_reason}: MACD死叉确认 {macd_diff:.4f}", details
 
-            if latest['macd'] > 0 and prev_macd_slope > 0 and macd_slope < -self.config.SIDEWAYS_SLOPE_THRESHOLD:
-                return "SELL", f"{trend_reason}: MACD零轴上方斜率转负 {macd_slope:.4f}", details
-
-            if cci > self.config.CCI_OVERBOUGHT:
-                return "SELL", f"{trend_reason}: CCI超买 {cci:.2f}", details
+            if prev_macd_slope > 0 and macd_slope < -self.config.SIDEWAYS_SLOPE_THRESHOLD and abs(macd_value - signal_value) > self.config.MACD_SIGNAL_DIFF_THRESHOLD:
+                return "SELL", f"{trend_reason}: MACD斜率转负 {macd_slope:.4f}", details
 
             if macd_slope < -self.config.SIDEWAYS_SLOPE_THRESHOLD and signal_slope < -self.config.SIDEWAYS_SLOPE_THRESHOLD + 0.15:
                 return "SELL", f"{trend_reason}: 双线向下加速 macd_slope={macd_slope:.4f}, signal_slope={signal_slope:.4f}", details
@@ -510,7 +507,7 @@ class SignalGenerator:
             self.logger.info(f"🟡 {symbol} 触发清仓信号，清仓卖出")
             
         # 优先级1：数据库信号为 SELL 的情况
-        if db_signal == "SELL":
+        elif db_signal == "SELL":
             if tech_signal == "BUY":
                 # 严重冲突：db 要求卖出，但 tech 要求买入
                 # → 以技术信号为准，执行做多（技术认为当前应买入）
@@ -561,7 +558,7 @@ class SignalGenerator:
         # 保存最终结果
         details['final_signal'] = final_signal
         details['final_reason'] = reason
-
+        
         # self.logger.info(f"{symbol} 信号: {final_signal} | 原因: {reason}")
         return final_signal, reason, details
 

@@ -17,11 +17,12 @@ class Config:
     QUOTE_CURRENCY = "USDT"  # 计价货币
     
     # ============ 时间周期配置 ============
-    INTERVAL = "30m"  # K线周期：5分钟
+    INTERVAL = "30m"  # K线周期
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
     INTERVAL_SECONDS = 60  # 程序运行时间间隔
     SLEEP_INTERVAL = 300   # 程序休眠时间间隔
-    
+    SLEEP_INTERVAL_TRAILING_STOP = 900 # 触发移动止损后，程序休眠时间间隔
+
     # ============ MACD 指标参数 ============
     MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）
     MACD_SLOW_LENGTH = 13   # 慢线周期（长期EMA）
@@ -55,11 +56,15 @@ class Config:
     
     # ============ 风险管理参数 ============
     # 止损止盈参数
-    STOP_LOSS_PCT = 0.8     # 止损百分比
-    TAKE_PROFIT_PCT = 100.0   # 止盈百分比
-    TRAILING_STOP_PCT = 10  # 移动止损百分比
-    HANDING_FEE_PCT = 2.5    # 手续费百分比
+    STOP_LOSS_PCT = 2.8     # 止损百分比 %
+    TAKE_PROFIT_PCT = 8   # 止盈百分比 %
+    TRAILING_STOP_PCT = 10  # 移动止损百分比 %
+    HANDING_FEE_PCT = 2.5    # 手续费百分比 %
     
+    # 移动止损参数
+    TRAILING_STOP_PEAK = 20 # %
+    TRAILING_STOP_LOW = 6 # %
+
     # 仓位管理 暂时不用
     POSITION_SIZE_PCT = 10.0  # 每笔交易仓位比例（占总资金%）
     MAX_POSITION_PCT = 60.0  # 最大总仓位比例
@@ -82,7 +87,7 @@ class Config:
     # SIMULATION_MODE = False  # 是否为模拟交易模式
     # INITIAL_CAPITAL = 10000.0  # 初始资金（USDT）
     SETTLE = "usdt" # 合约的结算币种
-    LEVERAGE = 1  # 杠杆倍数
+    LEVERAGE = 5  # 杠杆倍数
     SIZE = 1 # 每次开仓的合约张数
     
     # ============ 日志和监控 ============

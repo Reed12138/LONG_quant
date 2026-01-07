@@ -38,7 +38,7 @@ class CryptoTradingBot:
         # 数据存储
         self.market_data = {}
         self.trade_history = []
-        self.max_unrealised_pnl = 0
+        self.max_unrealised_pnl_pct = 0
         self._live_price_buffers = {} # 实时K线价格缓冲区
         
         # 实盘API配置
@@ -293,44 +293,45 @@ class CryptoTradingBot:
         if signal == 'CLEAR' and current_size != 0:
             self.logger.warning(f"🚨 触发清仓: 风险原因：{analysis_result['risk_reason']}；技术原因：{analysis_result['reason']}")
             self.close_position(symbol, -current_size)
+            if analysis_result['risk_reason'] == "触发移动止损":
+                self.logger.info(f"暂停程序{self.config.SLEEP_INTERVAL_TRAILING_STOP}s，等待市场波动调整")
+                time.sleep(self.config.SLEEP_INTERVAL_TRAILING_STOP)
             return
 
         # 做多信号
-        if signal == 'BUY':
+        elif signal == 'BUY':
             if current_size < 0:  # 当前持空仓 → 先平空，再立即开多（反向开仓）
                 abs_size = -current_size
                 self.logger.info(f"🔻 实盘平空（反向）: {symbol} {abs_size}张")
                 self.close_position(symbol, abs_size)
                 
                 # 平仓后立即开多
-                # self.set_single_position_mode()
-                # self.set_isolated_margin_mode(symbol)
-                # self.set_leverage(symbol)
                 size = int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开多（反向）: {symbol} {size}张")
                 result = self.open_position(symbol, size)
 
+                # 设置止盈止损价格
                 if result is not None:
-                    pos_data = self.get_position(symbol)
-                    entry_price = float(pos_data.get('entry_price', price))
-                    stop_loss_price = entry_price * (1 - self.config.STOP_LOSS_PCT / 100)
-                    self.set_stop_loss(symbol, stop_loss_price, "close_long")
-                    self.logger.info(f"✅ 反向开多成功，入场价: {entry_price}，止损: {stop_loss_price}")
+                    self.setup_tp_sl_after_entry(
+                        symbol=symbol,
+                        stop_loss_pct=self.config.STOP_LOSS_PCT,
+                        take_profit_pct=self.config.TAKE_PROFIT_PCT
+                    )
+                    self.logger.info(f"✅ 反向开多成功")
 
             elif current_size == 0:  # 无仓 → 直接开多
-                # self.set_single_position_mode()
-                # self.set_isolated_margin_mode(symbol)
-                # self.set_leverage(symbol)
                 size = int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开多: {symbol} {size}张")
                 result = self.open_position(symbol, size)
 
+                # 设置止盈止损价格
                 if result is not None:
-                    pos_data = self.get_position(symbol)
-                    entry_price = float(pos_data.get('entry_price', price))
-                    stop_loss_price = entry_price * (1 - self.config.STOP_LOSS_PCT / 100)
-                    self.set_stop_loss(symbol, stop_loss_price, "close_long")
-                    self.logger.info(f"✅ 入场价格: {entry_price}，止损已设置: {stop_loss_price}")
+                    self.setup_tp_sl_after_entry(
+                        symbol=symbol,
+                        stop_loss_pct=self.config.STOP_LOSS_PCT,
+                        take_profit_pct=self.config.TAKE_PROFIT_PCT
+                    )
+                    self.logger.info(f"✅ 开多成功")
 
             # else: current_size > 0，已有多仓 → 可忽略或加仓（这里默认不动）
 
@@ -341,50 +342,144 @@ class CryptoTradingBot:
                 self.close_position(symbol, current_size)
                 
                 # 平仓后立即开空
-                # self.set_single_position_mode()
-                # self.set_isolated_margin_mode(symbol)
-                # self.set_leverage(symbol)
                 size = -int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开空（反向）: {symbol} {size}张")
                 result = self.open_position(symbol, size)
 
+                # 设置止盈止损价格
                 if result is not None:
-                    pos_data = self.get_position(symbol)
-                    entry_price = float(pos_data.get('entry_price', price))
-                    stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PCT / 100)
-                    self.set_stop_loss(symbol, stop_loss_price, "close_short")
-                    self.logger.info(f"✅ 反向开空成功，入场价: {entry_price}，止损: {stop_loss_price}")
+                    self.setup_tp_sl_after_entry(
+                        symbol=symbol,
+                        stop_loss_pct=self.config.STOP_LOSS_PCT,
+                        take_profit_pct=self.config.TAKE_PROFIT_PCT
+                    )
+                    self.logger.info(f"✅ 反向开空成功")
 
             elif current_size == 0:  # 无仓 → 直接开空
-                # self.set_single_position_mode()
-                # self.set_isolated_margin_mode(symbol)
-                # self.set_leverage(symbol)
                 size = -int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开空: {symbol} {size}张")
                 result = self.open_position(symbol, size)
 
+                # 设置止盈止损价格
                 if result is not None:
-                    pos_data = self.get_position(symbol)
-                    entry_price = float(pos_data.get('entry_price', price))
-                    stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PCT / 100)
-                    self.set_stop_loss(symbol, stop_loss_price, "close_short")
-                    self.logger.info(f"✅ 入场价格: {entry_price}，止损已设置: {stop_loss_price}")
+                    self.setup_tp_sl_after_entry(
+                        symbol=symbol,
+                        stop_loss_pct=self.config.STOP_LOSS_PCT,
+                        take_profit_pct=self.config.TAKE_PROFIT_PCT
+                    )
+                    self.logger.info(f"✅ 开空成功")
 
             # else: current_size < 0，已有空仓 → 可忽略或加仓（这里默认不动）
         
         # 不动
-        elif signal == 'HOLD' and current_size > 0:
+        elif signal == 'HOLD' and current_size != 0:
             self.logger.debug(f"持有信号（HOLD），当前持仓: {current_size}张")
+
             pos_data = self.get_position(symbol)
+            if not pos_data:
+                return
+
             unrealised_pnl = float(pos_data.get('unrealised_pnl', 0))
-            position_value = float(pos_data.get('value', 0))  # 仓位名义价值（USDT）
-            if position_value > 0.01:  # 避免除零
-                unrealised_pnl_pct = (unrealised_pnl / position_value) * 100
+            margin = float(pos_data.get('margin', 0))
+
+            if margin > 0:
+                unrealised_pnl_pct = (unrealised_pnl / margin) * 100
             else:
                 unrealised_pnl_pct = 0.0
-            if unrealised_pnl_pct > self.config.HANDING_FEE_PCT:
+
+            if unrealised_pnl_pct >= self.config.HANDING_FEE_PCT:
                 self.close_position(symbol, current_size)
-                self.logger.info(f"💰 手续费获利平仓: {symbol} 浮盈 {unrealised_pnl_pct:.2f}% 超过手续费 {self.config.HANDING_FEE_PCT}%")
+                self.logger.info(
+                    f"💰 手续费覆盖平仓 | {symbol} | "
+                    f"浮盈: {unrealised_pnl_pct:.2f}% ≥ "
+                    f"{self.config.HANDING_FEE_PCT}% (基于保证金)"
+                )
+
+
+    def calc_tp_sl_by_margin(
+        self,
+        pos_data: dict,
+        stop_loss_pct: float,
+        take_profit_pct: float,
+        contract_size: float = 0.01
+    ):
+        """
+        基于「保证金盈亏百分比」计算止盈止损价格（兼容多/空）
+
+        Args:
+            pos_data: Gate position 返回的单条仓位数据
+            stop_loss_pct: 止损百分比（如 30 表示亏 30% 保证金）
+            take_profit_pct: 止盈百分比（如 50 表示赚 50% 保证金）
+            contract_size: 合约面值（ETH_USDT = 0.01）
+
+        Returns:
+            (stop_loss_price, take_profit_price)
+        """
+
+        entry_price = float(pos_data["entry_price"])
+        size = float(pos_data["size"])          # >0 多，<0 空
+        margin = float(pos_data["margin"])
+
+        # 每变动 1 USDT，PnL 变化多少
+        pnl_per_price = abs(size) * contract_size
+
+        # 目标盈亏（USDT）
+        loss_usdt = margin * stop_loss_pct / 100
+        profit_usdt = margin * take_profit_pct / 100
+
+        if size > 0:
+            # 多头
+            stop_loss_price = entry_price - loss_usdt / pnl_per_price
+            take_profit_price = entry_price + profit_usdt / pnl_per_price
+        else:
+            # 空头
+            stop_loss_price = entry_price + loss_usdt / pnl_per_price
+            take_profit_price = entry_price - profit_usdt / pnl_per_price
+
+        return stop_loss_price, take_profit_price
+
+    def setup_tp_sl_after_entry(
+        self,
+        symbol: str,
+        stop_loss_pct: float,
+        take_profit_pct: float,
+        contract_size: float = 0.01
+    ):
+        """
+        开仓成功后，基于保证金盈亏百分比设置止盈止损（兼容多/空）
+
+        Args:
+            symbol: 合约名称，如 "BTC_USDT"
+            stop_loss_pct: 止损百分比（如 30 表示亏 30% 保证金）
+            take_profit_pct: 止盈百分比（如 50 表示赚 50% 保证金）
+            contract_size: 合约面值（ETH_USDT = 0.01）
+        """
+
+        pos_data = self.get_position(symbol)
+        if not pos_data:
+            self.logger.warning(f"⚠️ 未获取到仓位信息，跳过止盈止损设置: {symbol}")
+            return
+
+        stop_loss_price, stop_profit_price = self.calc_tp_sl_by_margin(
+            pos_data=pos_data,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            contract_size=contract_size
+        )
+
+        size = float(pos_data["size"])
+        side = "close_long" if size > 0 else "close_short"
+
+        self.set_stop_loss(symbol, stop_loss_price, side)
+        self.set_stop_profit(symbol, stop_profit_price, side)
+
+        self.logger.info(
+            f"✅ 止盈止损已设置 | {symbol} | "
+            f"方向: {'多' if size > 0 else '空'} | "
+            f"入场价: {float(pos_data['entry_price']):.2f} | "
+            f"止损: {stop_loss_price:.2f} | "
+            f"止盈: {stop_profit_price:.2f}"
+        )
 
 
     def set_single_position_mode(self, settle='usdt'):
@@ -414,6 +509,93 @@ class CryptoTradingBot:
 
         # print(r.json())
         return r.json()
+
+    def set_stop_profit(self, contract: str, stop_price: float, close_type: str):
+        """
+        双向仓位设置止盈（价格触发订单）
+        - 使用 mark_price 触发（price_type: 1，最公平、防操纵）
+        - 触发后市价全平多头仓位（close-long-position + is_close: true）
+        - 止盈单永不过期
+
+        参数:
+            contract: 合约名，如 "BTC_USDT" 或 "ETH_USDT"
+            stop_price: 止损触发价格（当 mark_price <= 此价格时触发）
+
+        Returns:
+            dict or None: 成功返回包含 'id' 的字典，失败返回 None
+        """
+        if close_type == "close_long":
+            order_type = "close-long-position"
+            rule = 1
+        else:
+            order_type = "close-short-position"
+            rule = 2
+        path = "/futures/usdt/price_orders"
+
+        body = {
+            "initial": {
+                "contract": contract,
+                "size": 0,                       # 全部平仓
+                "price": "0",                    # 市价平仓
+                "tif": "ioc" ,                    # 市价单必须指定 ioc
+                # "close": True
+                "reduce_only": True,
+                "auto_size": close_type         # 双仓模式设置，close_long 平多头， close_short 平空头
+            },
+            "trigger": {
+                "strategy_type": 0,              # 0 = 价格触发
+                "price_type": 1,                 # 1 = mark_price（关键：使用标记价格）
+                "price": f"{stop_price:.2f}",    # 触发价格，保留2位小数（足够）
+                "rule": rule,                    # 触发规则
+                "expiration": 86400              # 过期时间：86400秒（1天），避免无限期挂单
+            },
+            "order_type": order_type,  # 触发后自动全平
+            # "is_close": True
+        }
+
+        payload_str = json.dumps(body, separators=(',', ':'))  # 紧凑格式用于签名
+
+        # 使用你已有的官方标准 gen_sign 函数
+        sign_headers = self.gen_sign('POST', self.prefix + path, "", payload_str)
+
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+        headers.update(sign_headers)
+
+        url = self.host + self.prefix + path
+
+        try:
+            r = requests.post(url, headers=headers, data=payload_str, timeout=10)
+
+            if r.status_code == 200:
+                result = r.json()
+                if 'id' in result:
+                    trigger_id = result['id']
+                    self.logger.info(
+                        f"✅ 止盈设置成功: {contract} 当 mark_price <= {stop_price:.2f} 时自动平仓，"
+                        f"触发订单ID: {trigger_id}"
+                    )
+                    return result
+                else:
+                    self.logger.error(f"止损返回异常（无ID）: {result}")
+                    return None
+            else:
+                # 尝试解析错误信息
+                try:
+                    error = r.json()
+                    label = error.get('label', 'UNKNOWN')
+                    message = error.get('message', '')
+                except:
+                    label = 'HTTP_ERROR'
+                    message = r.text or '空响应'
+                self.logger.error(f"止盈设置失败 [{label}]: {message}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"止盈请求异常: {e}")
+            return None
 
     def set_stop_loss(self, contract: str, stop_price: float, close_type: str):
         """
@@ -660,7 +842,7 @@ class CryptoTradingBot:
         交易时间：
             亚洲：09:00 - 15:00
             欧洲：15:00 - 23:00
-            美洲：20:00 - 04:00（跨天）
+            美洲：20:00 - 06:00（跨天）
         """
         from datetime import datetime, time as dtime
         import pytz
@@ -670,7 +852,7 @@ class CryptoTradingBot:
         # 允许交易的时间段
         if dtime(9, 0) <= now <= dtime(23, 59):
             return True
-        if dtime(0, 0) <= now <= dtime(4, 0):
+        if dtime(0, 0) <= now <= dtime(6, 0):
             return True
 
         return False
@@ -824,6 +1006,7 @@ class CryptoTradingBot:
         """
         更新实时K线：准确记录当前未完成K线的 high/low（纯轮询实现，不依赖WebSocket）
         通过维护价格缓冲区，记录本周期内所有出现过的价格点
+        支持 m 和 h 单位
         """
         if df.empty:
             self.logger.warning(f"{symbol} {timeframe} 数据为空，无法更新实时K线")
@@ -838,11 +1021,21 @@ class CryptoTradingBot:
         else:
             current_price = df['close'].iloc[-1]
 
-        # 计算时间
-        minutes = int(timeframe.rstrip('m'))
+        # 【关键修改】：解析 timeframe，支持 m 和 h
+        def parse_timeframe(tf: str) -> str:
+            """将 '1h' 转换为 '60min'，'30m' 保持不变，用于 pandas floor"""
+            if tf.endswith('h'):
+                hours = int(tf[:-1])
+                return f"{hours*60}min"
+            elif tf.endswith('m'):
+                return f"{tf}in"  # 30m -> 30min
+            else:
+                raise ValueError(f"Unsupported timeframe: {tf}")
+        
+        freq_str = parse_timeframe(timeframe)
         now = pd.Timestamp.now(tz=df.index.tz)
-        current_bar_start = now.floor(f'{minutes}min')
-        last_bar_start = df.index[-1].floor(f'{minutes}min') if not df.empty else None
+        current_bar_start = now.floor(freq_str)
+        last_bar_start = df.index[-1].floor(freq_str) if not df.empty else None
 
         # 构建缓冲区键（唯一标识 symbol + timeframe）
         buffer_key = f"{symbol}_{timeframe}"
@@ -881,7 +1074,7 @@ class CryptoTradingBot:
 
         df.loc[last_idx, 'close'] = current_price
 
-        # 【关键改进】：用缓冲区中所有价格更新 high 和 low
+        # 用缓冲区中所有价格更新 high 和 low
         if buffer['prices']:
             df.loc[last_idx, 'high'] = max(buffer['prices'])
             df.loc[last_idx, 'low']  = min(buffer['prices'])
@@ -889,8 +1082,6 @@ class CryptoTradingBot:
             # 理论上不会发生
             df.loc[last_idx, 'high'] = current_price
             df.loc[last_idx, 'low']  = current_price
-
-        # 可选：volume 仍为 0，或你可以从其他接口获取累计量，这里保持简单
 
         return df
 
@@ -950,36 +1141,36 @@ class CryptoTradingBot:
             # 3. 检查持仓风险（如果有持仓）
             position = self.get_position(symbol)
             if position and float(position.get('size', 0)) != 0:
+                # === 计算浮盈比例（基于保证金）===
                 unrealised_pnl = float(position.get('unrealised_pnl', 0))
-                position_value = float(position.get('value', 0))  # 仓位名义价值（USDT）
+                margin = float(position.get('margin', 0))
+                unrealised_pnl_pct = unrealised_pnl / margin  # ratio
+                self.logger.debug(
+                    f"ETH 浮盈: {unrealised_pnl:.4f} USDT "
+                    f"({unrealised_pnl_pct:+.2%})"
+                )
 
-                if position_value > 0.01:  # 避免除零
-                    unrealised_pnl_pct = (unrealised_pnl / position_value) * 100
-                else:
-                    unrealised_pnl_pct = 0.0
-
-                self.logger.debug(f"{symbol} 未实现盈亏: {unrealised_pnl:.4f} USDT ({unrealised_pnl_pct:+.2f}%)，仓位价值: {position_value:.2f} USDT")
-
-                # 更新历史最大浮盈（用于移动止损）
-                if unrealised_pnl_pct > self.max_unrealised_pnl :
-                    self.max_unrealised_pnl = unrealised_pnl_pct
-                    self.logger.debug(f"更新 {symbol} 最大浮盈记录: {unrealised_pnl_pct:.2f}%")
-
-                # 风险条件检查
+                # === 更新最大浮盈（仅在盈利区）===
+                if unrealised_pnl_pct > self.max_unrealised_pnl_pct:
+                    self.max_unrealised_pnl_pct = unrealised_pnl_pct
+                    self.logger.debug(
+                        f"更新 ETH 最大浮盈: {self.max_unrealised_pnl_pct:.2%}"
+                    )
+                # === 移动止损 ===
+                peak = self.max_unrealised_pnl_pct
+                current = unrealised_pnl_pct
                 risk_triggers = []
+                if peak >= self.config.TRAILING_STOP_PEAK/100:           # 高盈利回撤
+                    if current <= peak * 0.85:
+                        risk_triggers.append((True, "触发移动止损"))
+                elif peak >= self.config.TRAILING_STOP_LOW/100:         # 中盈利回撤
+                    if current <= peak * 0.75:
+                        risk_triggers.append((True, "触发移动止损"))
 
-                # 固定止损 已经在开仓时设置止损价格 无需监控固定止损
-                # if unrealised_pnl_pct <= -self.config.STOP_LOSS_PCT:
-                #     risk_triggers.append((True, f"固定止损触发: 浮亏 {unrealised_pnl_pct:.2f}% ≤ -{self.config.STOP_LOSS_PCT}%"))
-
-                # 固定止盈
-                if unrealised_pnl_pct >= self.config.TAKE_PROFIT_PCT:
-                    risk_triggers.append((True, f"固定止盈触发: 浮盈 {unrealised_pnl_pct:.2f}% ≥ {self.config.TAKE_PROFIT_PCT}%"))
-
-                # 移动止损
-                max_pnl = self.max_unrealised_pnl
-                if max_pnl > 10 and unrealised_pnl < max_pnl * (1 - self.config.TRAILING_STOP_PCT/100): # 盈利阈值10美元 设置最大盈利阈值避免频繁触发
-                    risk_triggers.append((True, f"移动止损触发: 浮盈回撤 ${max_pnl - unrealised_pnl_pct:.2f}"))
+                if risk_triggers:
+                    self.logger.warning(
+                        f"🚨 ETH 移动止损 | 当前: {current:.2%} | 峰值: {peak:.2%}"
+                    )
 
                 # MACD 背离等其他风险...
                 if divergence_detected:
@@ -1084,6 +1275,8 @@ class CryptoTradingBot:
             for symbol in self.config.SYMBOLS:
                 analysis_result = self.analyze_symbol(symbol)
 
+                # print("===================================")
+                # print(analysis_result['signal'])
                 # 日志输出
                 signal_color = {"BUY": "🟢", "SELL": "🔴", "CLEAR": "🟡"}.get(analysis_result['signal'], "⚪")
                 self.logger.info(

@@ -16,17 +16,23 @@ class Config:
     SYMBOLS = ["ETH_USDT"]  # 交易对列表, 仅交易ETH_USDT
     QUOTE_CURRENCY = "USDT"  # 计价货币
     
+    # ============ 止损止盈参数 ============
+    STOP_LOSS_PCT = 1.88     # 止损百分比 %
+    TAKE_PROFIT_PCT = 8   # 止盈百分比 %
+    HANDING_FEE_PCT = 2.5    # 手续费百分比 %
+
     # ============ 时间周期配置 ============
     INTERVAL = "30m"  # K线周期
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
-    INTERVAL_SECONDS = 60  # 程序运行时间间隔
+    INTERVAL_SECONDS = 0  # 程序运行时间间隔
     SLEEP_INTERVAL = 300   # 程序休眠时间间隔
-    SLEEP_INTERVAL_TRAILING_STOP = 900 # 触发移动止损后，程序休眠时间间隔
+    SLEEP_INTERVAL_TRAILING_STOP = 1800 # 触发移动止损后，程序休眠时间间隔
 
     # ============ MACD 指标参数 ============
     MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）
     MACD_SLOW_LENGTH = 13   # 慢线周期（长期EMA）
     MACD_SIGNAL_LENGTH = 9  # 信号线周期
+    MACD_SLOPE_WINDOW = 4   # 斜率计算回看周期，以这个周期内的k线收盘价做最小二乘线性回归拟合，得到斜率
     
     # ============ CCI 指标参数 ============
     CCI_PERIOD = 20         # CCI计算周期
@@ -34,12 +40,16 @@ class Config:
     # ============ 震荡参数 =============
     MACD_SIGNAL_DIFF_THRESHOLD = 0.8  # MACD信号差异阈值
     ADX_PERIOD = 14                   # ADX计算周期
-    ADX_TREND_THRESHOLD = 18      # 趋势强度阈值
+    ADX_TREND_THRESHOLD = 18        # 趋势强度阈值
     ADX_OSCILLATION_THRESHOLD = 18  # 低于此值为震荡
     RSI_THRESHOLD = 44
     RSI_PERIOD = 14
 
     # ============ 交易信号参数 ============
+    # 爆发行情阈值（ETH 30m）
+    BIG_MOVE_PCT = 0.015        # 1.5%
+    BIG_VOLUME   = 20 * 1e6
+
     # MACD交叉信号阈值（避免微小波动触发）
     MACD_CROSS_THRESHOLD = 0.6
     
@@ -55,15 +65,9 @@ class Config:
     CONFIRMATION_BARS = 3   # 信号确认需要的K线数量
     
     # ============ 风险管理参数 ============
-    # 止损止盈参数
-    STOP_LOSS_PCT = 2.8     # 止损百分比 %
-    TAKE_PROFIT_PCT = 8   # 止盈百分比 %
-    TRAILING_STOP_PCT = 10  # 移动止损百分比 %
-    HANDING_FEE_PCT = 2.5    # 手续费百分比 %
-    
     # 移动止损参数
     TRAILING_STOP_PEAK = 20 # %
-    TRAILING_STOP_LOW = 6 # %
+    TRAILING_STOP_LOW = 3.88 # %
 
     # 仓位管理 暂时不用
     POSITION_SIZE_PCT = 10.0  # 每笔交易仓位比例（占总资金%）

@@ -304,7 +304,7 @@ class CryptoTradingBot:
                 abs_size = -current_size
                 self.logger.info(f"🔻 实盘平空（反向）: {symbol} {abs_size}张")
                 self.close_position(symbol, abs_size)
-                
+
                 # 平仓后立即开多
                 size = int(self.config.SIZE)
                 self.logger.info(f"🚀 实盘开多（反向）: {symbol} {size}张")
@@ -480,7 +480,6 @@ class CryptoTradingBot:
             f"止损: {stop_loss_price:.2f} | "
             f"止盈: {stop_profit_price:.2f}"
         )
-
 
     def set_single_position_mode(self, settle='usdt'):
         """
@@ -746,6 +745,7 @@ class CryptoTradingBot:
         """
         市价开多（修复 text 参数）
         """
+        self.max_unrealised_pnl_pct = 0.0 # 重置最大收益率
         path = "/futures/usdt/orders"
         body = {
             "contract": contract,
@@ -788,7 +788,7 @@ class CryptoTradingBot:
         if size == 0:
             self.logger.info(f"{contract} 持仓为0，无需平仓")
             return True
-
+        self.max_unrealised_pnl_pct = 0.0 # 重置最大收益率
         path = f"/futures/{self.config.SETTLE}/orders"
 
         body = {
@@ -852,7 +852,7 @@ class CryptoTradingBot:
         # 允许交易的时间段
         if dtime(9, 0) <= now <= dtime(23, 59):
             return True
-        if dtime(0, 0) <= now <= dtime(6, 0):
+        if dtime(0, 0) <= now <= dtime(8, 30):
             return True
 
         return False
@@ -1159,12 +1159,13 @@ class CryptoTradingBot:
                 # === 移动止损 ===
                 peak = self.max_unrealised_pnl_pct
                 current = unrealised_pnl_pct
+                # print(f"\n 收益率：当前{current}，最高：{peak}\n ")
                 risk_triggers = []
                 if peak >= self.config.TRAILING_STOP_PEAK/100:           # 高盈利回撤
-                    if current <= peak * 0.85:
+                    if current <= peak * 0.88:
                         risk_triggers.append((True, "触发移动止损"))
                 elif peak >= self.config.TRAILING_STOP_LOW/100:         # 中盈利回撤
-                    if current <= peak * 0.75:
+                    if current <= peak * 0.86:
                         risk_triggers.append((True, "触发移动止损"))
 
                 if risk_triggers:

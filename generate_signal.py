@@ -315,6 +315,7 @@ class SignalGenerator:
 
         latest = df.iloc[-1]
         prev = df.iloc[-2]
+        prev_prev = df.iloc[-3]
 
         # 填充 details
         for col in ['macd', 'macd_signal', 'macd_slope', 'signal_slope', 'cci', 'rsi']:
@@ -359,6 +360,26 @@ class SignalGenerator:
         signal_value = latest.get('macd_signal', 0)
         cci = latest.get('cci', 0)
 
+        # 顶点回撤
+        prev_volume = prev['volume']
+        body_pct = (prev['close'] - prev['open']) / prev['open']
+        amplitude = (prev['high'] - prev['low']) / prev['low']      # 振幅
+        MIN_AMPLITUDE = abs(body_pct) * 1.5                         # 影线阈值，振幅与实体相差不大的时候，可以反开，否则仍然观察趋势
+        if (prev_volume > Config.BIG_VOLUME or abs(body_pct) > Config.BIG_MOVE_PCT) and amplitude < MIN_AMPLITUDE:
+            if body_pct > 0:                                        # 涨幅过大
+                return "SELL", f"短期涨幅或成交量过大，涨幅：{body_pct}，成交量：{prev_volume}，回调下跌风险较高", details
+            else:                                                   # 跌幅过大
+                return "BUY", f"短期跌幅或成交量过大，涨幅：{body_pct}，成交量：{prev_volume}，回调上涨风险较高", details
+        
+        # 短期趋势反转
+        signal, reason = self.detect_recent_trend_follow_from_df(df)
+        if signal is not None:
+            self.logger.info(f"📉 趋势反转跟随信号: {signal} | {reason}")
+            return signal, f"趋势反转跟随信号: {reason}", details
+
+        # print(f"\n macd slope:{macd_slope}, signal slope:{signal_slope} \n")
+        # import time
+        # time.sleep(30)
         # 上升趋势
         if trend == "UP":
             # 上涨趋势：稳健持有，卖出信号需更严格（调高阈值，忽略短期波动）
@@ -446,6 +467,65 @@ class SignalGenerator:
             return "HOLD", f"{trend_reason}: 下跌趋势谨慎观望", details
 
         return "HOLD", f"{trend_reason}: 无明确方向", details
+
+    @staticmethod
+    def detect_recent_trend_follow_from_df(
+        df: pd.DataFrame,
+        lookback: int = 5,
+        cumulative_threshold: float = 0.0168,   # 1.68%
+        recent_threshold: float = 0.003        # 0.3%
+    ):
+        """
+        df: 包含 open, high, low, close, volume 的 DataFrame（时间升序）
+        返回: (signal, reason)
+            signal: "BUY" / "SELL" / None
+        """
+
+        if len(df) < lookback + 1:
+            return None, "K线数量不足"
+
+        # 取最近 lookback 根 + 前一根（用于 close-to-close）
+        recent = df.iloc[-(lookback + 1):]
+
+        # 计算 close-to-close 涨跌幅
+        closes = recent["close"].values
+        pct_changes = (closes[1:] - closes[:-1]) / closes[:-1]
+
+        cumulative_change = pct_changes.sum()
+        last_change = pct_changes[-1]
+        prev_changes = pct_changes[:-1]
+
+        # 成交量过滤（可选但强烈建议）
+        last_volume = recent.iloc[-1]["volume"]
+        prev_volumes = recent.iloc[:-1]["volume"]
+        volume_confirm = last_volume < prev_volumes.max()
+
+        # ---- 情况 1：累计下跌后，最近一根明显上涨 → 跟随上涨
+        if (
+            cumulative_change < -cumulative_threshold
+            and last_change > recent_threshold
+            and prev_changes.sum() < 0
+            and volume_confirm
+        ):
+            return (
+                "BUY",
+                f"累计下跌 {cumulative_change:.2%} 后反弹 {last_change:.2%}"
+            )
+
+        # ---- 情况 2：累计上涨后，最近一根明显下跌 → 跟随下跌
+        if (
+            cumulative_change > cumulative_threshold
+            and last_change < -recent_threshold
+            and prev_changes.sum() > 0
+            and volume_confirm
+        ):
+            return (
+                "SELL",
+                f"累计上涨 {cumulative_change:.2%} 后回落 {last_change:.2%}"
+            )
+
+        return None, "无明确反转跟随信号"
+
 
     def _confirm_signal(self, symbol: str, signal_type: str, df: pd.DataFrame) -> bool:
         """连续K线确认（原有逻辑保留）"""

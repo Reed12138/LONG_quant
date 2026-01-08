@@ -283,16 +283,17 @@ class DataFetcher:
         return df
     
     @staticmethod
-    def rolling_slope(series: pd.Series, window: int = 5) -> pd.Series:
+    def rolling_slope(series: pd.Series, window: int) -> pd.Series:
         """
         计算滚动线性回归斜率
         window: 回看K线数量，30m周期建议5-8（即2.5-4小时）
         """
+        window = Config.MACD_SLOPE_WINDOW
         def _slope(x):
             if len(x) < 2:
                 return np.nan
             return np.polyfit(range(len(x)), x, 1)[0]  # 返回斜率（一次多项式系数）
-
+    
         return series.rolling(window).apply(_slope, raw=True)
 
     def calculate_cci(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
@@ -672,9 +673,6 @@ class DataFetcher:
             df['adx'] = 0.0
 
         return df
-
-
-
 
     def calculate_volume_ma(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
         """

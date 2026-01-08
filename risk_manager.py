@@ -180,38 +180,6 @@ class RiskManager:
         
         return False, f"未触发止盈：当前变化{price_change_pct:.2f}%"
     
-    def check_trailing_stop(self, symbol: str, entry_price: float, current_price: float, 
-                           highest_price: float, lowest_price: float) -> Tuple[bool, str]:
-        """
-        检查移动止损
-        
-        Args:
-            symbol: 交易对
-            entry_price: 入场价格
-            current_price: 当前价格
-            highest_price: 持仓期间最高价
-            lowest_price: 持仓期间最低价
-            
-        Returns:
-            Tuple[bool, str]: (是否触发移动止损, 描述信息)
-        """
-        if entry_price <= 0:
-            return False, "入场价格无效"
-        
-        # 多头移动止损（从最高点回撤超过阈值）
-        if current_price < highest_price and highest_price > 0:
-            drawdown_pct = ((highest_price - current_price) / highest_price) * 100
-            if drawdown_pct > self.config.TRAILING_STOP_PCT:
-                return True, f"触发移动止损：从高点回撤{drawdown_pct:.2f}%"
-        
-        # 空头移动止损（从最低点反弹超过阈值）
-        if current_price > lowest_price and lowest_price > 0:
-            rebound_pct = ((current_price - lowest_price) / lowest_price) * 100
-            if rebound_pct > self.config.TRAILING_STOP_PCT:
-                return True, f"触发移动止损：从低点反弹{rebound_pct:.2f}%"
-        
-        return False, "未触发移动止损"
-    
     def update_position(self, symbol: str, side: str, entry_price: float, quantity: float):
         """
         更新持仓信息

@@ -861,9 +861,9 @@ class CryptoTradingBot:
                     risk_triggers.append((True, f"固定止盈触发: 浮盈 {unrealised_pnl_pct:.2f}% ≥ {self.config.TAKE_PROFIT_PCT}%"))
 
                 # 移动止损
-                max_pnl = self.max_unrealised_pnl
-                if max_pnl > 10 and unrealised_pnl < max_pnl * (1 - self.config.TRAILING_STOP_PCT/100): # 盈利阈值10美元 设置最大盈利阈值避免频繁触发
-                    risk_triggers.append((True, f"移动止损触发: 浮盈回撤 ${max_pnl - unrealised_pnl_pct:.2f}"))
+                # max_pnl = self.max_unrealised_pnl
+                # if max_pnl > 10 and unrealised_pnl < max_pnl * (1 - self.config.TRAILING_STOP_PCT/100): # 盈利阈值10美元 设置最大盈利阈值避免频繁触发
+                #     risk_triggers.append((True, f"移动止损触发: 浮盈回撤 ${max_pnl - unrealised_pnl_pct:.2f}"))
 
                 # MACD 背离等其他风险...
                 if divergence_detected:

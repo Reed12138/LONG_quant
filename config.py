@@ -17,15 +17,17 @@ class Config:
     QUOTE_CURRENCY = "USDT"  # 计价货币
     
     # ============ 止损止盈参数 ============
-    STOP_LOSS_PCT = 1.88     # 止损百分比 %
-    TAKE_PROFIT_PCT = 8   # 止盈百分比 %
+    STOP_LOSS_PCT = 2.88     # 止损百分比 %
+    TAKE_PROFIT_PCT = 10   # 止盈百分比 %
     HANDING_FEE_PCT = 2.5    # 手续费百分比 %
+    CUMULATIVE_THRESHOLD = 1.68 # 累计涨跌幅 %
+    RECENT_THRESHOLD = 0.003 # 趋势反转涨跌幅阈值 
 
     # ============ 时间周期配置 ============
     INTERVAL = "30m"  # K线周期
     LOOKBACK_PERIODS = 200  # 历史数据回看周期数
     INTERVAL_SECONDS = 0  # 程序运行时间间隔
-    SLEEP_INTERVAL = 300   # 程序休眠时间间隔
+    SLEEP_INTERVAL = 300   # 程序休眠时间间隔   
     SLEEP_INTERVAL_TRAILING_STOP = 1800 # 触发移动止损后，程序休眠时间间隔
 
     # ============ MACD 指标参数 ============
@@ -91,8 +93,8 @@ class Config:
     # SIMULATION_MODE = False  # 是否为模拟交易模式
     # INITIAL_CAPITAL = 10000.0  # 初始资金（USDT）
     SETTLE = "usdt" # 合约的结算币种
-    LEVERAGE = 5  # 杠杆倍数
-    SIZE = 1 # 每次开仓的合约张数
+    LEVERAGE = 15  # 杠杆倍数
+    SIZE = 3 # 每次开仓的合约张数
     
     # ============ 日志和监控 ============
     LOG_LEVEL = "INFO"  # 日志级别：DEBUG, INFO, WARNING, ERROR

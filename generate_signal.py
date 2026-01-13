@@ -472,8 +472,8 @@ class SignalGenerator:
     def detect_recent_trend_follow_from_df(
         df: pd.DataFrame,
         lookback: int = 5,
-        cumulative_threshold: float = 0.0168,   # 1.68%
-        recent_threshold: float = 0.003        # 0.3%
+        cumulative_threshold: float = Config.CUMULATIVE_THRESHOLD,
+        recent_threshold: float = Config.RECENT_THRESHOLD 
     ):
         """
         df: 包含 open, high, low, close, volume 的 DataFrame（时间升序）

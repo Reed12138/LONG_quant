@@ -842,7 +842,7 @@ class CryptoTradingBot:
         交易时间：
             亚洲：09:00 - 15:00
             欧洲：15:00 - 23:00
-            美洲：20:00 - 06:00（跨天）
+            美洲：20:00 - 04:00（跨天）
         """
         from datetime import datetime, time as dtime
         import pytz
@@ -850,9 +850,11 @@ class CryptoTradingBot:
         now = datetime.now(beijing_tz).time()
 
         # 允许交易的时间段
-        if dtime(9, 0) <= now <= dtime(23, 59):
+        if dtime(9, 0) <= now <= dtime(17, 30):
             return True
-        if dtime(0, 0) <= now <= dtime(8, 30):
+        if dtime(22, 30) <= now <= dtime(23, 59):
+            return True
+        if dtime(0, 0) <= now <= dtime(4, 00):
             return True
 
         return False
@@ -1162,10 +1164,10 @@ class CryptoTradingBot:
                 # print(f"\n 收益率：当前{current}，最高：{peak}\n ")
                 risk_triggers = []
                 if peak >= self.config.TRAILING_STOP_PEAK/100:           # 高盈利回撤
-                    if current <= peak * 0.88:
+                    if current <= peak * 0.9:
                         risk_triggers.append((True, "触发移动止损"))
                 elif peak >= self.config.TRAILING_STOP_LOW/100:         # 中盈利回撤
-                    if current <= peak * 0.86:
+                    if current <= peak * 0.8:
                         risk_triggers.append((True, "触发移动止损"))
 
                 if risk_triggers:
@@ -1173,7 +1175,7 @@ class CryptoTradingBot:
                         f"🚨 ETH 移动止损 | 当前: {current:.2%} | 峰值: {peak:.2%}"
                     )
 
-                # MACD 背离等其他风险...
+                # MACD 背离
                 if divergence_detected:
                     risk_triggers.append((True, f"MACD背离: {divergence_reason}"))
 
@@ -1185,10 +1187,6 @@ class CryptoTradingBot:
                         result['signal'] = 'CLEAR'
                         result['reason'] = f"风险控制平仓: {reason}"
                         self.logger.warning(f"🚨 {symbol} 触发风险清仓: {reason}")
-
-                        # 可选：在这里直接执行平仓，或留给 execute_live_trade 处理
-                        # self.close_position(symbol, abs(float(position['size'])))
-
                         return result
             
             # ============ 如果没有风险，生成交易信号 ============
@@ -1274,6 +1272,8 @@ class CryptoTradingBot:
             self.update_market_data()
 
             for symbol in self.config.SYMBOLS:
+
+                # 获取信号
                 analysis_result = self.analyze_symbol(symbol)
 
                 # print("===================================")
@@ -1302,7 +1302,7 @@ class CryptoTradingBot:
             self.logger.error(f"交易周期执行失败: {e}", exc_info=True)
 
     def run(self):
-        self.logger.info("启动实盘交易机器人...")
+        self.logger.info("启动实盘交易")
         if not self.test_connection():
             self.logger.error("API连接失败，退出")
             return

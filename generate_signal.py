@@ -468,10 +468,108 @@ class SignalGenerator:
 
         return "HOLD", f"{trend_reason}: 无明确方向", details
 
+    def _technical_signal_vei(self, symbol: str, df: pd.DataFrame, current_price: float) -> Tuple[str, str, Dict]:
+        """
+        基于VEI判断波动环境后生成技术信号（df中已有vei列）
+        VEI > 1.2 → 跳过交易，HOLD
+        VEI < 1.0 → 环境稳定，允许生成交易信号
+        """
+        details = {
+            'price': current_price,
+            'timestamp': datetime.now()
+        }
+
+        if len(df) < 40:
+            return "HOLD", "K线数据不足", details
+
+        if 'vei' not in df.columns:
+            return "HOLD", "数据中缺少 VEI 列，无法判断波动环境", details
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 直接读取已计算的 VEI
+        vei = latest.get('vei', np.nan)
+        if pd.isna(vei):
+            return "HOLD", "最新 VEI 值为 NaN，无法判断", details
+
+        details['vei'] = vei
+
+        # VEI 核心规则
+        if vei > Config.VEI_THRESHOLD_HIGH:
+            return "HOLD", f"VEI={vei:.2f} > {Config.VEI_THRESHOLD_HIGH}：波动率扩张期，跳过交易机会", details
+
+        if vei >= Config.VEI_THRESHOLD_LOW:
+            return "HOLD", f"VEI={vei:.2f} 在 {Config.VEI_THRESHOLD_LOW} ~ {Config.VEI_THRESHOLD_HIGH} 之间：波动中性，暂观望", details
+
+        # VEI < 1.0 → 低波动稳定环境，允许产生交易信号
+        # 以下为原有的交易信号逻辑（去掉趋势依赖，使用中性判断）
+
+        # 1. 顶点回撤检查（保持原逻辑）
+        prev_volume = prev['volume']
+        body_pct = (prev['close'] - prev['open']) / prev['open']
+        amplitude = (prev['high'] - prev['low']) / prev['low']
+        MIN_AMPLITUDE = abs(body_pct) * 1.5
+
+        if (prev_volume > self.config.BIG_VOLUME or abs(body_pct) > self.config.BIG_MOVE_PCT) and amplitude < MIN_AMPLITUDE:
+            if body_pct > 0:
+                return "SELL", f"短期涨幅或成交量过大（涨幅:{body_pct:.2%}，量:{prev_volume}），回调风险高", details
+            else:
+                return "BUY", f"短期跌幅或成交量过大（跌幅:{abs(body_pct):.2%}，量:{prev_volume}），反弹风险高", details
+
+        # 2. 短期趋势反转信号（保持原逻辑）
+        signal, reason = self.detect_recent_trend_follow_from_df(df)
+        if signal is not None:
+            self.logger.info(f"趋势反转跟随信号: {signal} | {reason}")
+            return signal, f"趋势反转跟随信号: {reason}", details
+
+        # 3. MACD / CCI 相关变量
+        macd_diff = latest['macd'] - latest['macd_signal']
+        prev_macd_diff = prev['macd'] - prev['macd_signal']
+        macd_slope = latest.get('macd_slope', 0)
+        signal_slope = latest.get('signal_slope', 0)
+        prev_macd_slope = prev.get('macd_slope', 0)
+        macd_value = latest.get('macd', 0)
+        signal_value = latest.get('macd_signal', 0)
+        cci = latest.get('cci', 0)
+        rsi = latest.get('rsi', 0)
+
+        # 清仓信号
+        if cci < self.config.CCI_OVERSOLD:
+            return "CLEAR", f"VEI稳定 + CCI超卖 {cci:.2f}", details
+        
+        if cci > self.config.CCI_OVERBOUGHT:
+            return "CLEAR", f"VEI稳定 + CCI超买 {cci:.2f}", details
+
+        # 买入信号（低波动环境更倾向跟随这些信号）
+        if prev_macd_diff <= 0 and macd_diff > 0 and abs(macd_diff) > self.config.MACD_CROSS_THRESHOLD:
+            if self._confirm_signal(symbol, "BUY", df):
+                return "BUY", f"VEI稳定 + MACD金叉确认 {macd_diff:.4f}", details
+
+        if prev_macd_slope < 0 and macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and rsi < self.config.RSI_THRESHOLD_LOW:
+            return "BUY", f"VEI稳定 + MACD斜率转强 {macd_slope:.4f}", details
+
+        if macd_slope > self.config.MACD_POSITIVE_SLOPE_THRESHOLD and macd_slope > signal_slope and rsi < self.config.RSI_THRESHOLD_HIGH + 5:
+            return "BUY", f"VEI稳定 + MACD加速上涨 {macd_slope:.4f} > {signal_slope:.4f}", details
+
+        # 做空信号
+        if prev_macd_diff >= 0 and macd_diff < 0 and abs(macd_diff) > self.config.MACD_CROSS_THRESHOLD:
+            if self._confirm_signal(symbol, "SELL", df):
+                return "SELL", f"VEI稳定 + MACD死叉确认 {macd_diff:.4f}", details
+
+        if prev_macd_slope > 0 and macd_slope < -self.config.MACD_POSITIVE_SLOPE_THRESHOLD and rsi > self.config.RSI_THRESHOLD_HIGH:
+            return "SELL", f"VEI稳定 + MACD斜率转弱 {macd_slope:.4f}", details
+
+        if macd_slope < -self.config.MACD_POSITIVE_SLOPE_THRESHOLD and signal_slope < -self.config.MACD_POSITIVE_SLOPE_THRESHOLD + 0.1 and rsi > self.config.RSI_THRESHOLD_LOW + 10:
+            return "SELL", f"VEI稳定 + MACD/Signal双线向下加速", details
+
+        # 默认
+        return "HOLD", f"VEI={vei:.2f} < 1.0（稳定），但暂无明确交易信号", details
+
     @staticmethod
     def detect_recent_trend_follow_from_df(
         df: pd.DataFrame,
-        lookback: int = 5,
+        lookback: int = 4,
         cumulative_threshold: float = Config.CUMULATIVE_THRESHOLD,
         recent_threshold: float = Config.RECENT_THRESHOLD 
     ):
@@ -569,7 +667,7 @@ class SignalGenerator:
         details['db_reason'] = db_reason
 
         # 2. 获取技术指标信号
-        tech_signal, tech_reason, tech_details = self._technical_signal_new(symbol, df, current_price)
+        tech_signal, tech_reason, tech_details = self._technical_signal_vei(symbol, df, current_price)
         details.update(tech_details)
         details['tech_signal'] = tech_signal
         details['tech_reason'] = tech_reason
@@ -607,6 +705,7 @@ class SignalGenerator:
                 # 严重冲突：db 要求买入，但 tech 要求卖出
                 # → 以技术信号为准，执行离场（技术认为当前应卖出）
                 final_signal = "SELL"
+                self.logger.info(f"👇 {symbol} 触发做空信号")
                 reason = f"技术信号与数据库信号严重冲突，以技术信号为准！数据库：BUY，技术：SELL（{tech_reason}）"
             
             else:
@@ -623,11 +722,12 @@ class SignalGenerator:
                 # 新增规则：一方 HOLD，一方 BUY → 执行 BUY
                 final_signal = "BUY"
                 reason = f"技术信号发出BUY，数据库无方向，执行做多: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
-                self.logger.info(f"🚀 {symbol} 触发做多信号（技术主导）")
+                self.logger.info(f"🚀 {symbol} 触发做多信号")
 
             elif tech_signal == "SELL":
                 # 新增规则：一方 HOLD，一方 SELL → 执行 SELL
                 final_signal = "SELL"
+                self.logger.info(f"👇 {symbol} 触发做空信号")
                 reason = f"技术信号发出SELL，数据库无方向，执行离场: 数据库({db_signal}/{db_reason}), 技术({tech_signal}/{tech_reason})"
 
             else:

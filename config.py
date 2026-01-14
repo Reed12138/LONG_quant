@@ -17,9 +17,9 @@ class Config:
     QUOTE_CURRENCY = "USDT"  # 计价货币
     
     # ============ 止损止盈参数 ============
-    STOP_LOSS_PCT = 2.88     # 止损百分比 %
-    TAKE_PROFIT_PCT = 10   # 止盈百分比 %
-    HANDING_FEE_PCT = 2.5    # 手续费百分比 %
+    STOP_LOSS_PCT = 10.88     # 止损百分比 %
+    TAKE_PROFIT_PCT = 25   # 止盈百分比 %
+    HANDING_FEE_PCT = 0.063    # 手续费百分比 %
     CUMULATIVE_THRESHOLD = 1.68 # 累计涨跌幅 %
     RECENT_THRESHOLD = 0.003 # 趋势反转涨跌幅阈值 
 
@@ -31,8 +31,8 @@ class Config:
     SLEEP_INTERVAL_TRAILING_STOP = 1800 # 触发移动止损后，程序休眠时间间隔
 
     # ============ MACD 指标参数 ============
-    MACD_FAST_LENGTH = 6    # 快线周期（短期EMA）
-    MACD_SLOW_LENGTH = 13   # 慢线周期（长期EMA）
+    MACD_FAST_LENGTH = 7    # 快线周期（短期EMA）
+    MACD_SLOW_LENGTH = 16   # 慢线周期（长期EMA）
     MACD_SIGNAL_LENGTH = 9  # 信号线周期
     MACD_SLOPE_WINDOW = 4   # 斜率计算回看周期，以这个周期内的k线收盘价做最小二乘线性回归拟合，得到斜率
     
@@ -41,11 +41,14 @@ class Config:
     
     # ============ 震荡参数 =============
     MACD_SIGNAL_DIFF_THRESHOLD = 0.8  # MACD信号差异阈值
-    ADX_PERIOD = 14                   # ADX计算周期
+    ADX_PERIOD = 8                   # ADX计算周期
     ADX_TREND_THRESHOLD = 18        # 趋势强度阈值
     ADX_OSCILLATION_THRESHOLD = 18  # 低于此值为震荡
-    RSI_THRESHOLD = 44
-    RSI_PERIOD = 14
+    RSI_THRESHOLD_HIGH = 70
+    RSI_THRESHOLD_LOW = 35
+    RSI_PERIOD = 8
+    VEI_THRESHOLD_HIGH = 1.2  # VEI高阈值
+    VEI_THRESHOLD_LOW = 1.0   # VEI低阈值
 
     # ============ 交易信号参数 ============
     # 爆发行情阈值（ETH 30m）
@@ -61,7 +64,7 @@ class Config:
 
     # CCI超买超卖阈值
     CCI_OVERBOUGHT = 280    # 超买阈值
-    CCI_OVERSOLD = -240     # 超卖阈值
+    CCI_OVERSOLD = -280     # 超卖阈值
     
     # 信号确认条件
     CONFIRMATION_BARS = 3   # 信号确认需要的K线数量
@@ -69,7 +72,7 @@ class Config:
     # ============ 风险管理参数 ============
     # 移动止损参数
     TRAILING_STOP_PEAK = 20 # %
-    TRAILING_STOP_LOW = 3.88 # %
+    TRAILING_STOP_LOW = 8.88 # %
 
     # 仓位管理 暂时不用
     POSITION_SIZE_PCT = 10.0  # 每笔交易仓位比例（占总资金%）
@@ -93,8 +96,8 @@ class Config:
     # SIMULATION_MODE = False  # 是否为模拟交易模式
     # INITIAL_CAPITAL = 10000.0  # 初始资金（USDT）
     SETTLE = "usdt" # 合约的结算币种
-    LEVERAGE = 15  # 杠杆倍数
-    SIZE = 3 # 每次开仓的合约张数
+    LEVERAGE = 30  # 杠杆倍数
+    SIZE = 50 # 每次开仓的合约张数
     
     # ============ 日志和监控 ============
     LOG_LEVEL = "INFO"  # 日志级别：DEBUG, INFO, WARNING, ERROR

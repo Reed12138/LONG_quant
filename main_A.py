@@ -987,6 +987,7 @@ class CryptoTradingBot:
                     updated_df = self.data_fetcher.calculate_volume_ma(updated_df)
                     updated_df = self.data_fetcher.calculate_adx_dmi_safe(updated_df)
                     updated_df = self.data_fetcher.calculate_rsi(updated_df)
+                    updated_df = self.data_fetcher.calculate_vei(updated_df)
                     
                     self.market_data[symbol] = updated_df
                     

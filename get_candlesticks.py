@@ -6,9 +6,9 @@ from datetime import datetime
 SYMBOL = "ETH_USDT"
 INTERVAL = "1m"
 LIMIT_PER_REQUEST = 1000
-MAX_TOTAL_CANDLES = 10000
+MAX_TOTAL_CANDLES = 15000
 
-OUTPUT_FILE = "eth_usdt_1m_10000.csv"
+OUTPUT_FILE = "eth_usdt_1m_15000.csv"
 
 url = "https://api.gateio.ws/api/v4/futures/usdt/candlesticks"
 

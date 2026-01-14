@@ -135,7 +135,93 @@ class DataFetcher:
         except Exception as e:
             self.logger.error(f"获取{symbol}永续合约历史数据失败: {e}")
             return None
-    
+
+    def fetch_historical_data_4h(self, symbol: str, limit: int = None) -> Optional[pd.DataFrame]:
+        """
+        获取 USDT 永续合约历史K线数据（无需认证，符合官方文档）
+        
+        Args:
+            symbol: 合约名，如 "BTC_USDT" 或 "ETH_USDT"
+            limit: 数据条数限制（最大2000，官方建议）
+            
+        Returns:
+            pd.DataFrame: 列: open, high, low, close, volume，索引为 timestamp
+        """
+        if limit is None:
+            limit = self.config.LOOKBACK_PERIODS
+        limit = min(limit, 2000)  # 官方期货接口最大约2000条
+
+        try:
+            # 官方路径：USDT永续合约K线
+            url = f"{self.config.API_BASE_URL}/futures/usdt/candlesticks"
+            
+            formatted_symbol = self._format_symbol(symbol)
+            
+            params = {
+                'contract': formatted_symbol,
+                'interval': '4h',
+                'limit': limit
+            }
+            
+            self.logger.debug(f"请求永续合约历史K线 URL: {url} 参数: {params}")
+            
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if not data or not isinstance(data, list) or len(data) == 0:
+                self.logger.warning(f"未获取到{symbol}永续合约历史数据，返回: {data}")
+                return None
+            
+            self.logger.debug(f"获取到{len(data)}条{symbol}永续合约K线数据")
+
+            # 官方返回格式（7列对象数组，非字符串数组）：
+            # [{"t":秒时间戳, "o":开, "h":高, "l":低, "c":收, "v":合约张数}, ...]
+            # 字段全为字符串
+            df = pd.DataFrame(data)
+            
+            # 官方字段名正是 o, h, l, c, v, t
+            df = df[['t', 'o', 'h', 'l', 'c', 'v']].copy()
+            df.rename(columns={
+                'o': 'open',
+                'h': 'high',
+                'l': 'low',
+                'c': 'close',
+                'v': 'volume'
+            }, inplace=True)
+            
+            # 时间戳转 datetime 并设为索引
+            df['timestamp'] = pd.to_datetime(df['t'].astype(int), unit='s')
+            df.set_index('timestamp', inplace=True)
+            df.drop(columns=['t'], inplace=True)
+            
+            # 转换数值类型（字符串 → float）
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                df[col] = df[col].astype(float)  # 官方已是字符串数字，直接astype即可
+            
+            # 官方返回最新在前，反转为时间升序
+            df.sort_index(inplace=True)
+            
+            self.logger.info(
+                f"获取{symbol}永续合约历史数据成功，共{len(df)}条记录，"
+                f"时间范围: {df.index[0]} 到 {df.index[-1]}"
+            )
+            return df
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"网络错误获取{symbol}永续合约历史数据: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    self.logger.error(f"错误详情: {e.response.json()}")
+                except:
+                    self.logger.error(f"响应内容: {e.response.text[:200]}")
+            return None
+        except Exception as e:
+            self.logger.error(f"获取{symbol}永续合约历史数据失败: {e}")
+            return None
+
     def fetch_current_price(self, symbol: str) -> Optional[float]:
         """
         获取 USDT 永续合约当前价格（无需认证，符合官方文档）
@@ -673,6 +759,34 @@ class DataFetcher:
             df['adx'] = 0.0
 
         return df
+
+    def calculate_vei(self, df, short_period=10, long_period=50, threshold=1.2):
+        # 先算 True Range
+        df = df.copy()
+        df['prev_close'] = df['close'].shift(1)
+        df['TR'] = np.maximum.reduce([
+            df['high'] - df['low'],
+            (df['high'] - df['prev_close']).abs(),
+            (df['low'] - df['prev_close']).abs()
+        ])
+        
+        # ATR = TR 的 RMAA (Wilder 平滑)
+        df['ATR_short'] = df['TR'].ewm(
+            alpha=1/short_period,
+            adjust=False,
+            min_periods=short_period
+        ).mean()
+        
+        df['ATR_long'] = df['TR'].ewm(
+            alpha=1/long_period,
+            adjust=False,
+            min_periods=long_period
+        ).mean()
+        
+        df['vei'] = df['ATR_short'] / df['ATR_long']
+        df['vei_signal'] = (df['vei'] > threshold).astype(int)
+        
+        return df.drop(columns=['prev_close', 'TR'])  # 可选择保留用于调试
 
     def calculate_volume_ma(self, df: pd.DataFrame, period: int = None) -> pd.DataFrame:
         """
